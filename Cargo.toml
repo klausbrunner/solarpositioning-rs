@@ -1,0 +1,74 @@
+[package]
+name = "solar-positioning"
+version = "0.2.1"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+description = "High-accuracy solar positioning algorithms (SPA and Grena3) for calculating sun position and sunrise/sunset times"
+homepage = "https://github.com/klausbrunner/solarpositioning-rs"
+repository = "https://github.com/klausbrunner/solarpositioning-rs"
+documentation = "https://docs.rs/solar-positioning"
+readme = "README.md"
+categories = ["science", "algorithms", "mathematics"]
+keywords = ["solar", "sun", "astronomy", "spa", "sunrise"]
+authors = ["Klaus Brunner <klaus.brunner@gmail.com>"]
+exclude = [
+    ".github/",
+    "tests/data/",
+    "benches/data/",
+]
+
+[dependencies]
+# Core dependencies
+thiserror = { version = "2.0", default-features = false }
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+
+# Optional dependencies
+libm = { version = "0.2", optional = true }
+serde = { version = "1.0", features = ["derive"], optional = true }
+
+[dev-dependencies]
+chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = "0.9"
+criterion = { version = "0.5", features = ["html_reports"] }
+proptest = "1.4"
+approx = "0.5"
+csv = "1.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[features]
+default = ["std"]
+std = []
+libm = ["dep:libm"]
+serde = ["dep:serde"]
+
+# Future features for SIMD optimizations
+# simd = ["packed_simd"]
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3
+overflow-checks = false
+panic = "abort"
+
+[profile.bench]
+debug = true
+
+# Benchmarks will be added later
+# [[bench]]
+# name = "algorithms"
+# harness = false
+
+[[example]]
+name = "basic_usage"
+path = "examples/basic_usage.rs"
+
+[[example]]
+name = "sunrise_sunset"
+path = "examples/sunrise_sunset.rs"
+
+[[example]]
+name = "grena3_comparison"
+path = "examples/grena3_comparison.rs"

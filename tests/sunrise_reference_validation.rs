@@ -1,0 +1,307 @@
+//! Test sunrise/sunset calculations against reference data.
+
+use chrono::{DateTime, Timelike, Utc};
+use csv::ReaderBuilder;
+use solar_positioning::{spa, types::SunriseResult};
+use std::error::Error;
+use std::fs::File;
+
+#[derive(Debug)]
+struct SunriseTestRecord {
+    datetime: DateTime<Utc>,
+    latitude: f64,
+    longitude: f64,
+    expected_sunset: String,
+    expected_transit: String,
+    expected_sunrise: String,
+}
+
+impl SunriseTestRecord {
+    fn from_csv_record(record: &csv::StringRecord) -> Result<Self, Box<dyn Error>> {
+        Ok(Self {
+            datetime: record[0].parse()?,
+            latitude: record[1].parse()?,
+            longitude: record[2].parse()?,
+            expected_sunrise: record[3].to_string(),
+            expected_transit: record[4].to_string(),
+            expected_sunset: record[5].to_string(),
+        })
+    }
+}
+
+fn time_difference_seconds(expected: &str, actual: &DateTime<Utc>) -> f64 {
+    // Parse expected time in HH:MM:SS format
+    let parts: Vec<&str> = expected.split(':').collect();
+    if parts.len() != 3 {
+        return f64::INFINITY;
+    }
+
+    let expected_hours: u32 = parts[0].parse().unwrap_or(0);
+    let expected_minutes: u32 = parts[1].parse().unwrap_or(0);
+    let expected_seconds: u32 = parts[2].parse().unwrap_or(0);
+
+    let expected_total_seconds = expected_hours * 3600 + expected_minutes * 60 + expected_seconds;
+    let actual_total_seconds = actual.hour() * 3600 + actual.minute() * 60 + actual.second();
+
+    (actual_total_seconds as i64 - expected_total_seconds as i64).abs() as f64
+}
+
+#[test]
+fn test_sunrise_sunset_debug_single_case() -> Result<(), Box<dyn Error>> {
+    // Debug a single test case
+    let test_datetime = "1910-03-05T12:30:00Z".parse::<DateTime<Utc>>()?;
+    let test_latitude = -36.840556;
+    let test_longitude = 174.740000;
+    let delta_t = 0.0;
+
+    println!("=== DEBUG SINGLE CASE ===");
+    println!("Input: {}", test_datetime);
+    println!("Lat: {:.6}, Lon: {:.6}", test_latitude, test_longitude);
+
+    // Java SPA returns: Sunrise=18:09:57, Transit=00:32:56, Sunset=06:56:15
+    // CSV format: date lat lon sunrise transit sunset
+    // CSV data: 1910-03-05T12:30:00Z,-36.840556,174.740000,18:09:56,00:32:56,06:56:15
+    let expected_sunrise = "18:09:56";
+    let expected_transit = "00:32:56";
+    let expected_sunset = "06:56:15";
+
+    let result = spa::sunrise_sunset(
+        test_datetime,
+        test_latitude,
+        test_longitude,
+        delta_t,
+        -0.833, // Standard sunrise/sunset elevation angle
+    )?;
+
+    match result {
+        SunriseResult::RegularDay {
+            sunrise,
+            transit,
+            sunset,
+        } => {
+            println!(
+                "Expected: Sunrise={}, Transit={}, Sunset={}",
+                expected_sunrise, expected_transit, expected_sunset
+            );
+            println!(
+                "Actual:   Sunrise={}, Transit={}, Sunset={}",
+                sunrise.format("%H:%M:%S"),
+                transit.format("%H:%M:%S"),
+                sunset.format("%H:%M:%S")
+            );
+
+            // Show the Julian date calculation details
+            let day_start = test_datetime
+                .date_naive()
+                .and_hms_opt(0, 0, 0)
+                .unwrap()
+                .and_utc();
+            println!("Day start: {}", day_start);
+
+            // Let's also check what day_start gives us
+            let jd = solar_positioning::time::JulianDate::from_datetime(day_start, delta_t)?;
+            println!("Julian Date: {:.6}", jd.julian_date());
+            println!("JME: {:.6}", jd.julian_ephemeris_millennium());
+
+            // Let's check if our basic SPA position calculation works for the same inputs
+            let position = spa::solar_position(
+                test_datetime,
+                test_latitude,
+                test_longitude,
+                delta_t,
+                0.0,     // elevation = 0
+                1013.25, // pressure
+                15.0,    // temperature
+            )?;
+            println!(
+                "SPA Position at input time: Azimuth={:.3}°, Zenith={:.3}°",
+                position.azimuth(),
+                position.zenith_angle()
+            );
+
+            // Let's check position at the calculated sunrise time
+            let sunrise_position = spa::solar_position(
+                sunrise,
+                test_latitude,
+                test_longitude,
+                delta_t,
+                0.0,
+                1013.25,
+                15.0,
+            )?;
+            println!(
+                "SPA Position at calculated sunrise: Azimuth={:.3}°, Elevation={:.3}°",
+                sunrise_position.azimuth(),
+                sunrise_position.elevation_angle()
+            );
+
+            // At sunrise, elevation should be around -0.833 degrees
+            println!("Expected elevation at sunrise: -0.833°");
+
+            // Let's also check our position calculation at the expected transit time
+            let expected_transit_time = "1910-03-05T00:32:56Z".parse::<DateTime<Utc>>()?;
+            let transit_position = spa::solar_position(
+                expected_transit_time,
+                test_latitude,
+                test_longitude,
+                delta_t,
+                0.0,
+                1013.25,
+                15.0,
+            )?;
+            println!(
+                "Expected transit time {} -> Azimuth={:.5}°, Zenith={:.5}°",
+                expected_transit_time.format("%H:%M:%S"),
+                transit_position.azimuth(),
+                transit_position.zenith_angle()
+            );
+            println!("Java reference at transit: Azimuth=0.00364°, Zenith=30.36656°");
+        }
+        _ => {
+            panic!("Expected regular day result");
+        }
+    }
+
+    Ok(())
+}
+
+#[test]
+fn test_sunrise_sunset_against_spa_reference_data() -> Result<(), Box<dyn Error>> {
+    let file = File::open("tests/data/spa_reference_testdata.csv")?;
+    let mut reader = ReaderBuilder::new()
+        .comment(Some(b'#'))
+        .has_headers(false)
+        .from_reader(file);
+
+    let mut records = Vec::new();
+    for result in reader.records() {
+        let record = result?;
+        if !record.is_empty() && record.len() >= 6 {
+            match SunriseTestRecord::from_csv_record(&record) {
+                Ok(test_record) => records.push(test_record),
+                Err(e) => {
+                    eprintln!("Skipping invalid record: {:?}, error: {}", record, e);
+                    continue;
+                }
+            }
+        }
+    }
+
+    println!("Loaded {} sunrise/sunset test records", records.len());
+
+    let mut max_sunrise_error = 0.0f64;
+    let mut max_sunset_error = 0.0f64;
+    let mut max_transit_error = 0.0f64;
+    let mut failed_cases = 0;
+
+    for (i, record) in records.iter().enumerate() {
+        // Use Delta T = 0 to match reference data
+        let delta_t = 0.0;
+
+        match spa::sunrise_sunset(
+            record.datetime,
+            record.latitude,
+            record.longitude,
+            delta_t,
+            -0.833, // Standard sunrise/sunset elevation angle
+        ) {
+            Ok(result) => {
+                match result {
+                    SunriseResult::RegularDay {
+                        sunrise,
+                        transit,
+                        sunset,
+                    } => {
+                        let sunrise_error =
+                            time_difference_seconds(&record.expected_sunrise, &sunrise);
+                        let transit_error =
+                            time_difference_seconds(&record.expected_transit, &transit);
+                        let sunset_error =
+                            time_difference_seconds(&record.expected_sunset, &sunset);
+
+                        max_sunrise_error = max_sunrise_error.max(sunrise_error);
+                        max_transit_error = max_transit_error.max(transit_error);
+                        max_sunset_error = max_sunset_error.max(sunset_error);
+
+                        // Allow tolerance of 120 seconds (2 minutes) for sunrise/sunset calculations
+                        // This accounts for atmospheric refraction and algorithmic differences
+                        let tolerance = 120.0;
+
+                        if sunrise_error > tolerance
+                            || sunset_error > tolerance
+                            || transit_error > tolerance
+                        {
+                            println!(
+                                "Record {}: DateTime={}, Lat={:.6}, Lon={:.6}",
+                                i + 1,
+                                record.datetime,
+                                record.latitude,
+                                record.longitude
+                            );
+                            println!(
+                                "  Expected: Sunrise={}, Transit={}, Sunset={}",
+                                record.expected_sunrise,
+                                record.expected_transit,
+                                record.expected_sunset
+                            );
+                            println!(
+                                "  Actual:   Sunrise={}, Transit={}, Sunset={}",
+                                sunrise.format("%H:%M:%S"),
+                                transit.format("%H:%M:%S"),
+                                sunset.format("%H:%M:%S")
+                            );
+                            println!(
+                                "  Errors:   Sunrise={:.1}s, Transit={:.1}s, Sunset={:.1}s",
+                                sunrise_error, transit_error, sunset_error
+                            );
+                            failed_cases += 1;
+                        }
+                    }
+                    _ => {
+                        // Skip polar day/night cases for now as reference data only contains regular days
+                        continue;
+                    }
+                }
+            }
+            Err(e) => {
+                println!(
+                    "SPA sunrise/sunset calculation failed for record {}: {}",
+                    i + 1,
+                    e
+                );
+                failed_cases += 1;
+            }
+        }
+    }
+
+    println!("Maximum sunrise error: {:.1} seconds", max_sunrise_error);
+    println!("Maximum transit error: {:.1} seconds", max_transit_error);
+    println!("Maximum sunset error: {:.1} seconds", max_sunset_error);
+    println!("Failed cases: {}", failed_cases);
+
+    // Sunrise/sunset calculations should be accurate within 2 minutes
+    let tolerance = 120.0;
+
+    assert!(
+        max_sunrise_error < tolerance,
+        "Maximum sunrise error {:.1}s exceeds tolerance {:.1}s",
+        max_sunrise_error,
+        tolerance
+    );
+
+    assert!(
+        max_transit_error < tolerance,
+        "Maximum transit error {:.1}s exceeds tolerance {:.1}s",
+        max_transit_error,
+        tolerance
+    );
+
+    assert!(
+        max_sunset_error < tolerance,
+        "Maximum sunset error {:.1}s exceeds tolerance {:.1}s",
+        max_sunset_error,
+        tolerance
+    );
+
+    Ok(())
+}

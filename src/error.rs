@@ -1,5 +1,6 @@
 //! Error types for the solar positioning library.
 
+use crate::math::normalize_degrees_0_to_360;
 use core::fmt;
 
 /// Result type alias for operations in this crate.
@@ -241,22 +242,6 @@ pub fn check_refraction_params_usable(pressure: f64, temperature: f64) -> bool {
         && pressure < 3000.0
         && temperature > -273.0
         && temperature < 273.0
-}
-
-/// Normalizes an angle in degrees to the range [0, 360).
-///
-/// # Arguments
-/// * `degrees` - Angle in degrees
-///
-/// # Returns
-/// Angle normalized to [0, 360) degrees
-fn normalize_degrees_0_to_360(degrees: f64) -> f64 {
-    let normalized = degrees % 360.0;
-    if normalized < 0.0 {
-        normalized + 360.0
-    } else {
-        normalized
-    }
 }
 
 #[cfg(test)]

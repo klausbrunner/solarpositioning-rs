@@ -1,6 +1,6 @@
 //! Test to compare results with the Java implementation.
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, FixedOffset, TimeZone, Utc};
 use solar_positioning::spa;
 
 #[test]
@@ -8,14 +8,17 @@ fn test_compare_with_java_spa() {
     // Use the exact same parameters as one of the reference data points
     // From the CSV: 1910-03-15T00:30:00Z,-36.840556,174.740000,0.188643,34.269919
 
-    let datetime = "1910-03-15T00:30:00Z".parse::<DateTime<Utc>>().unwrap();
+    let utc_datetime = "1910-03-15T00:30:00Z".parse::<DateTime<Utc>>().unwrap();
+    let datetime = FixedOffset::east_opt(0)
+        .unwrap()
+        .from_utc_datetime(&utc_datetime.naive_utc());
     let latitude = -36.840556;
     let longitude = 174.740000;
     let expected_azimuth = 0.188643;
     let expected_zenith = 34.269919;
 
     println!("Testing against Java reference data:");
-    println!("DateTime: {}", datetime);
+    println!("DateTime: {}", utc_datetime);
     println!("Latitude: {:.6}°", latitude);
     println!("Longitude: {:.6}°", longitude);
     println!("Expected azimuth: {:.6}°", expected_azimuth);

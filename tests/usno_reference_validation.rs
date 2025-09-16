@@ -1,6 +1,6 @@
 //! Test sunrise/sunset calculations against USNO reference data.
 
-use chrono::{DateTime, Timelike, Utc};
+use chrono::{DateTime, FixedOffset, TimeZone, Timelike, Utc};
 use csv::ReaderBuilder;
 use solar_positioning::{spa, types::SunriseResult};
 use std::error::Error;
@@ -85,8 +85,11 @@ fn test_usno_reference_data() -> Result<(), Box<dyn Error>> {
     let tolerance = 40.0;
 
     for (i, record) in records.iter().enumerate() {
+        let datetime_fixed = FixedOffset::east_opt(0)
+            .unwrap()
+            .from_utc_datetime(&record.datetime.naive_utc());
         let result = spa::sunrise_sunset(
-            record.datetime,
+            datetime_fixed,
             record.latitude,
             record.longitude,
             0.0,    // Delta T = 0
@@ -101,7 +104,9 @@ fn test_usno_reference_data() -> Result<(), Box<dyn Error>> {
                     } = sunrise_result
                     {
                         if let Some(ref expected_sunrise) = record.expected_sunrise {
-                            let sunrise_error = time_difference_seconds(expected_sunrise, &sunrise);
+                            let sunrise_utc = sunrise.with_timezone(&Utc);
+                            let sunrise_error =
+                                time_difference_seconds(expected_sunrise, &sunrise_utc);
                             max_sunrise_error = max_sunrise_error.max(sunrise_error);
 
                             if sunrise_error > tolerance {
@@ -116,7 +121,9 @@ fn test_usno_reference_data() -> Result<(), Box<dyn Error>> {
                         }
 
                         if let Some(ref expected_sunset) = record.expected_sunset {
-                            let sunset_error = time_difference_seconds(expected_sunset, &sunset);
+                            let sunset_utc = sunset.with_timezone(&Utc);
+                            let sunset_error =
+                                time_difference_seconds(expected_sunset, &sunset_utc);
                             max_sunset_error = max_sunset_error.max(sunset_error);
 
                             if sunset_error > tolerance {
@@ -223,8 +230,11 @@ fn test_usno_extreme_cases() -> Result<(), Box<dyn Error>> {
     let tolerance = 150.0;
 
     for (i, record) in records.iter().enumerate() {
+        let datetime_fixed = FixedOffset::east_opt(0)
+            .unwrap()
+            .from_utc_datetime(&record.datetime.naive_utc());
         let result = spa::sunrise_sunset(
-            record.datetime,
+            datetime_fixed,
             record.latitude,
             record.longitude,
             0.0,
@@ -239,7 +249,9 @@ fn test_usno_extreme_cases() -> Result<(), Box<dyn Error>> {
                     } = sunrise_result
                     {
                         if let Some(ref expected_sunrise) = record.expected_sunrise {
-                            let sunrise_error = time_difference_seconds(expected_sunrise, &sunrise);
+                            let sunrise_utc = sunrise.with_timezone(&Utc);
+                            let sunrise_error =
+                                time_difference_seconds(expected_sunrise, &sunrise_utc);
                             if sunrise_error > tolerance {
                                 println!(
                                     "Record {}: Sunrise error {:.1}s exceeds tolerance {:.1}s",
@@ -252,7 +264,9 @@ fn test_usno_extreme_cases() -> Result<(), Box<dyn Error>> {
                         }
 
                         if let Some(ref expected_sunset) = record.expected_sunset {
-                            let sunset_error = time_difference_seconds(expected_sunset, &sunset);
+                            let sunset_utc = sunset.with_timezone(&Utc);
+                            let sunset_error =
+                                time_difference_seconds(expected_sunset, &sunset_utc);
                             if sunset_error > tolerance {
                                 println!(
                                     "Record {}: Sunset error {:.1}s exceeds tolerance {:.1}s",
@@ -342,8 +356,11 @@ fn test_usno_civil_twilight() -> Result<(), Box<dyn Error>> {
     let tolerance = 150.0;
 
     for (i, record) in records.iter().enumerate() {
+        let datetime_fixed = FixedOffset::east_opt(0)
+            .unwrap()
+            .from_utc_datetime(&record.datetime.naive_utc());
         let result = spa::sunrise_sunset(
-            record.datetime,
+            datetime_fixed,
             record.latitude,
             record.longitude,
             0.0,
@@ -358,7 +375,9 @@ fn test_usno_civil_twilight() -> Result<(), Box<dyn Error>> {
                     } = sunrise_result
                     {
                         if let Some(ref expected_sunrise) = record.expected_sunrise {
-                            let sunrise_error = time_difference_seconds(expected_sunrise, &sunrise);
+                            let sunrise_utc = sunrise.with_timezone(&Utc);
+                            let sunrise_error =
+                                time_difference_seconds(expected_sunrise, &sunrise_utc);
                             if sunrise_error > tolerance {
                                 println!(
                                     "Record {}: Civil twilight sunrise error {:.1}s exceeds tolerance {:.1}s",
@@ -371,7 +390,9 @@ fn test_usno_civil_twilight() -> Result<(), Box<dyn Error>> {
                         }
 
                         if let Some(ref expected_sunset) = record.expected_sunset {
-                            let sunset_error = time_difference_seconds(expected_sunset, &sunset);
+                            let sunset_utc = sunset.with_timezone(&Utc);
+                            let sunset_error =
+                                time_difference_seconds(expected_sunset, &sunset_utc);
                             if sunset_error > tolerance {
                                 println!(
                                     "Record {}: Civil twilight sunset error {:.1}s exceeds tolerance {:.1}s",

@@ -1,6 +1,6 @@
 //! SPA accuracy tests using reference data from NREL's reference implementation.
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, FixedOffset, TimeZone, Utc};
 use csv::ReaderBuilder;
 use solar_positioning::spa;
 use std::error::Error;
@@ -73,8 +73,11 @@ fn test_spa_accuracy_against_nrel_reference() -> Result<(), Box<dyn Error>> {
 
     // Test parameters from NREL reference: elevation=0, pressure=1000, temperature=10, deltaT=0
     for (i, record) in test_records.iter().enumerate() {
+        let datetime_fixed = FixedOffset::east_opt(0)
+            .unwrap()
+            .from_utc_datetime(&record.datetime.naive_utc());
         match spa::solar_position(
-            record.datetime,
+            datetime_fixed,
             record.latitude,
             record.longitude,
             0.0,    // elevation (meters)
@@ -153,7 +156,10 @@ fn test_spa_specific_cases() {
     // Test a few specific cases that are known to be correct
 
     // Test case: 2000-01-01 12:00 UTC at Greenwich (lat=0, lon=0)
-    let datetime = "2000-01-01T12:00:00Z".parse::<DateTime<Utc>>().unwrap();
+    let utc_datetime = "2000-01-01T12:00:00Z".parse::<DateTime<Utc>>().unwrap();
+    let datetime = FixedOffset::east_opt(0)
+        .unwrap()
+        .from_utc_datetime(&utc_datetime.naive_utc());
     let result = spa::solar_position(
         datetime, 0.0,     // Greenwich latitude
         0.0,     // Greenwich longitude

@@ -8,7 +8,7 @@
 
 use crate::math::{floor, polynomial};
 use crate::{Error, Result};
-use chrono::{Datelike, Timelike};
+use chrono::{Datelike, TimeZone, Timelike};
 
 /// Seconds per day (86,400)
 const SECONDS_PER_DAY: f64 = 86_400.0;
@@ -32,22 +32,35 @@ pub struct JulianDate {
 }
 
 impl JulianDate {
-    /// Creates a new Julian date from a chrono `DateTime<Utc>`.
+    /// Creates a new Julian date from a timezone-aware chrono `DateTime`.
+    ///
+    /// This function properly handles timezone-aware datetimes by converting the entire
+    /// datetime to UTC for accurate Julian Date calculations. Solar calculations require
+    /// proper handling of the Earth's rotation relative to the Sun, which is referenced
+    /// to Universal Time.
     ///
     /// # Arguments
-    /// * `datetime` - UTC date and time
+    /// * `datetime` - Timezone-aware date and time
     /// * `delta_t` - ΔT in seconds (difference between TT and UT1)
     ///
     /// # Returns
     /// Julian date or error if the date is invalid
-    pub fn from_datetime(datetime: chrono::DateTime<chrono::Utc>, delta_t: f64) -> Result<Self> {
+    ///
+    /// # Errors
+    /// Returns error if the date/time components are invalid (e.g., invalid month, day, hour).
+    pub fn from_datetime<Tz: TimeZone>(
+        datetime: &chrono::DateTime<Tz>,
+        delta_t: f64,
+    ) -> Result<Self> {
+        // Convert the entire datetime to UTC for proper Julian Date calculation
+        let utc_datetime = datetime.with_timezone(&chrono::Utc);
         Self::from_utc(
-            datetime.year(),
-            datetime.month(),
-            datetime.day(),
-            datetime.hour(),
-            datetime.minute(),
-            f64::from(datetime.second()) + f64::from(datetime.nanosecond()) / 1e9,
+            utc_datetime.year(),
+            utc_datetime.month(),
+            utc_datetime.day(),
+            utc_datetime.hour(),
+            utc_datetime.minute(),
+            f64::from(utc_datetime.second()) + f64::from(utc_datetime.nanosecond()) / 1e9,
             delta_t,
         )
     }
@@ -65,6 +78,9 @@ impl JulianDate {
     ///
     /// # Returns
     /// Julian date or error if the date is invalid
+    ///
+    /// # Errors
+    /// Returns error if any date/time component is outside valid ranges (month 1-12, day 1-31, hour 0-23, minute 0-59, second 0-59.999).
     ///
     /// # Example
     /// ```
@@ -111,6 +127,9 @@ impl JulianDate {
     ///
     /// # Returns
     /// Julian date with ΔT = 0
+    ///
+    /// # Errors
+    /// Returns error if the date/time components are outside valid ranges.
     pub fn from_utc_simple(
         year: i32,
         month: u32,
@@ -206,7 +225,7 @@ fn calculate_julian_date(
     second: f64,
 ) -> f64 {
     let mut y = year;
-    let mut m = month as i32;
+    let mut m = i32::try_from(month).expect("month should be valid i32");
 
     // Adjust for January and February being treated as months 13 and 14 of previous year
     if m < 3 {
@@ -259,6 +278,7 @@ impl DeltaT {
     /// let delta_t = DeltaT::estimate(2024.0).unwrap();
     /// assert!(delta_t > 60.0 && delta_t < 80.0); // Reasonable range for 2024
     /// ```
+    #[allow(clippy::too_many_lines)] // Comprehensive polynomial fit across historical periods
     pub fn estimate(decimal_year: f64) -> Result<f64> {
         let year = decimal_year;
 
@@ -384,6 +404,9 @@ impl DeltaT {
     ///
     /// # Returns
     /// Estimated ΔT in seconds
+    ///
+    /// # Errors
+    /// Returns error if month is outside the range 1-12.
     pub fn estimate_from_date(year: i32, month: u32) -> Result<f64> {
         if !(1..=12).contains(&month) {
             return Err(Error::invalid_datetime("month must be between 1 and 12"));
@@ -451,8 +474,7 @@ mod tests {
         let diff = gregorian_date.julian_date() - julian_date.julian_date();
         assert!(
             (diff - 1.0).abs() < 1e-6,
-            "Expected 1 day difference in JD, got {}",
-            diff
+            "Expected 1 day difference in JD, got {diff}"
         );
 
         // Test that the Gregorian correction is applied correctly

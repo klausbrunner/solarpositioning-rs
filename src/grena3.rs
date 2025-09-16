@@ -18,7 +18,7 @@ use crate::math::{
     sqrt, tan,
 };
 use crate::{Result, SolarPosition};
-use chrono::{DateTime, Datelike, Timelike, Utc};
+use chrono::{DateTime, Datelike, TimeZone, Timelike};
 
 /// Calculate solar position using the Grena3 algorithm.
 ///
@@ -26,7 +26,7 @@ use chrono::{DateTime, Datelike, Timelike, Utc};
 /// It's much faster than SPA but less accurate and has a limited time range.
 ///
 /// # Arguments
-/// * `datetime` - UTC date and time
+/// * `datetime` - Timezone-aware date and time
 /// * `latitude` - Observer latitude in degrees (-90 to +90)
 /// * `longitude` - Observer longitude in degrees (-180 to +180)
 /// * `delta_t` - ΔT in seconds (difference between TT and UT1)
@@ -40,9 +40,9 @@ use chrono::{DateTime, Datelike, Timelike, Utc};
 /// # Example
 /// ```rust
 /// use solar_positioning::grena3;
-/// use chrono::{DateTime, Utc};
+/// use chrono::{DateTime, FixedOffset};
 ///
-/// let datetime = "2023-06-21T12:00:00Z".parse::<DateTime<Utc>>().unwrap();
+/// let datetime = "2023-06-21T12:00:00-07:00".parse::<DateTime<FixedOffset>>().unwrap();
 /// let position = grena3::solar_position(
 ///     datetime,
 ///     37.7749,     // San Francisco latitude
@@ -53,8 +53,8 @@ use chrono::{DateTime, Datelike, Timelike, Utc};
 /// println!("Azimuth: {:.3}°", position.azimuth());
 /// println!("Elevation: {:.3}°", position.elevation_angle());
 /// ```
-pub fn solar_position(
-    datetime: DateTime<Utc>,
+pub fn solar_position<Tz: TimeZone>(
+    datetime: DateTime<Tz>,
     latitude: f64,
     longitude: f64,
     delta_t: f64,
@@ -65,7 +65,7 @@ pub fn solar_position(
 /// Calculate solar position using the Grena3 algorithm with optional refraction correction.
 ///
 /// # Arguments
-/// * `datetime` - UTC date and time
+/// * `datetime` - Timezone-aware date and time
 /// * `latitude` - Observer latitude in degrees (-90 to +90)
 /// * `longitude` - Observer longitude in degrees (-180 to +180)
 /// * `delta_t` - ΔT in seconds (difference between TT and UT1)
@@ -77,8 +77,8 @@ pub fn solar_position(
 ///
 /// # Errors
 /// Returns error for invalid coordinates (latitude outside ±90°, longitude outside ±180°)
-pub fn solar_position_with_refraction(
-    datetime: DateTime<Utc>,
+pub fn solar_position_with_refraction<Tz: TimeZone>(
+    datetime: DateTime<Tz>,
     latitude: f64,
     longitude: f64,
     delta_t: f64,
@@ -96,7 +96,7 @@ pub fn solar_position_with_refraction(
     }
 
     // Calculate t (days since 2000-01-01 12:00:00 TT)
-    let t = calc_t(datetime);
+    let t = calc_t(&datetime);
     let t_e = t + 1.1574e-5 * delta_t;
     let omega_at_e = 0.0172019715 * t_e;
 
@@ -162,13 +162,15 @@ pub fn solar_position_with_refraction(
 }
 
 /// Calculate t parameter (days since 2000-01-01 12:00:00 TT)
-fn calc_t(datetime: DateTime<Utc>) -> f64 {
-    let mut m = i32::try_from(datetime.month()).expect("month should fit in i32");
-    let mut y = datetime.year();
-    let d = i32::try_from(datetime.day()).expect("day should fit in i32");
-    let h = f64::from(datetime.hour())
-        + f64::from(datetime.minute()) / 60.0
-        + f64::from(datetime.second()) / 3600.0;
+fn calc_t<Tz: TimeZone>(datetime: &DateTime<Tz>) -> f64 {
+    // Convert to UTC for proper astronomical calculations
+    let utc_datetime = datetime.with_timezone(&chrono::Utc);
+    let mut m = i32::try_from(utc_datetime.month()).expect("month should fit in i32");
+    let mut y = utc_datetime.year();
+    let d = i32::try_from(utc_datetime.day()).expect("day should fit in i32");
+    let h = f64::from(utc_datetime.hour())
+        + f64::from(utc_datetime.minute()) / 60.0
+        + f64::from(utc_datetime.second()) / 3600.0;
 
     if m <= 2 {
         m += 12;
@@ -186,11 +188,13 @@ fn calc_t(datetime: DateTime<Utc>) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::{DateTime, Utc};
+    use chrono::{DateTime, FixedOffset};
 
     #[test]
     fn test_grena3_basic_functionality() {
-        let datetime = "2023-06-21T12:00:00Z".parse::<DateTime<Utc>>().unwrap();
+        let datetime = "2023-06-21T12:00:00-07:00"
+            .parse::<DateTime<FixedOffset>>()
+            .unwrap();
 
         let result = solar_position(datetime, 37.7749, -122.4194, 69.0);
 
@@ -202,7 +206,9 @@ mod tests {
 
     #[test]
     fn test_grena3_with_refraction() {
-        let datetime = "2023-06-21T12:00:00Z".parse::<DateTime<Utc>>().unwrap();
+        let datetime = "2023-06-21T12:00:00-07:00"
+            .parse::<DateTime<FixedOffset>>()
+            .unwrap();
 
         let result = solar_position_with_refraction(
             datetime,
@@ -221,7 +227,9 @@ mod tests {
 
     #[test]
     fn test_grena3_coordinate_validation() {
-        let datetime = "2023-06-21T12:00:00Z".parse::<DateTime<Utc>>().unwrap();
+        let datetime = "2023-06-21T12:00:00-07:00"
+            .parse::<DateTime<FixedOffset>>()
+            .unwrap();
 
         // Invalid latitude
         assert!(solar_position(datetime, 95.0, 0.0, 0.0).is_err());
@@ -233,23 +241,27 @@ mod tests {
     #[test]
     fn test_calc_t() {
         // Test with a known date
-        let datetime = "2023-06-21T12:00:00Z".parse::<DateTime<Utc>>().unwrap();
-        let t = calc_t(datetime);
+        let datetime = "2023-06-21T12:00:00-07:00"
+            .parse::<DateTime<FixedOffset>>()
+            .unwrap();
+        let t = calc_t(&datetime);
 
         // The Grena3 algorithm uses a specific reference point that may result in negative values
         // This is correct behavior - just ensure the calculation is consistent
         assert!(t.is_finite(), "t should be finite");
 
         // Test that the calculation is stable
-        let t2 = calc_t(datetime);
+        let t2 = calc_t(&datetime);
         assert!(
             (t - t2).abs() < f64::EPSILON,
             "calc_t should be deterministic"
         );
 
         // Test that different dates give different results
-        let datetime2 = "2023-06-22T12:00:00Z".parse::<DateTime<Utc>>().unwrap();
-        let t3 = calc_t(datetime2);
+        let datetime2 = "2023-06-22T12:00:00Z"
+            .parse::<DateTime<FixedOffset>>()
+            .unwrap();
+        let t3 = calc_t(&datetime2);
         assert!(
             (t - t3).abs() > 0.5,
             "Different dates should give different t values"

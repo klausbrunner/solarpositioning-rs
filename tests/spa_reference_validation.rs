@@ -1,6 +1,6 @@
 //! Validate SPA implementation against NREL reference data.
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, FixedOffset, TimeZone, Utc};
 use solar_positioning::spa;
 
 const EPSILON: f64 = 0.001; // Allow 0.001° deviation for floating-point differences
@@ -49,7 +49,10 @@ fn validate_against_nrel_reference_data() {
     ];
 
     for (datetime_str, latitude, longitude, expected_azimuth, expected_zenith) in test_cases {
-        let datetime = datetime_str.parse::<DateTime<Utc>>().unwrap();
+        let utc_datetime = datetime_str.parse::<DateTime<Utc>>().unwrap();
+        let datetime = FixedOffset::east_opt(0)
+            .unwrap()
+            .from_utc_datetime(&utc_datetime.naive_utc());
 
         let result = spa::solar_position(
             datetime, latitude, longitude, 0.0,    // elevation
@@ -101,7 +104,10 @@ fn validate_against_nrel_reference_data() {
 fn test_modern_date_calculation() {
     // Test a modern date to ensure our fix works
     // Use solar noon time for San Francisco (approximately 20:00 UTC during summer solstice)
-    let datetime = "2023-06-21T20:00:00Z".parse::<DateTime<Utc>>().unwrap();
+    let utc_datetime = "2023-06-21T20:00:00Z".parse::<DateTime<Utc>>().unwrap();
+    let datetime = FixedOffset::east_opt(0)
+        .unwrap()
+        .from_utc_datetime(&utc_datetime.naive_utc());
 
     let result = spa::solar_position(
         datetime, 37.7749,   // San Francisco latitude

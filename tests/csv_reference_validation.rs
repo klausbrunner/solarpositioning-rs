@@ -1,6 +1,6 @@
 //! Comprehensive validation against the same CSV reference data used in the Java version.
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, FixedOffset, TimeZone, Utc};
 use solar_positioning::{grena3, spa};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -37,7 +37,10 @@ fn validate_spa_against_csv_reference_data() {
         let expected_azimuth: f64 = parts[3].parse().unwrap();
         let expected_zenith: f64 = parts[4].parse().unwrap();
 
-        let datetime = datetime_str.parse::<DateTime<Utc>>().unwrap();
+        let utc_datetime = datetime_str.parse::<DateTime<Utc>>().unwrap();
+        let datetime = FixedOffset::east_opt(0)
+            .unwrap()
+            .from_utc_datetime(&utc_datetime.naive_utc());
 
         // Calculate with our SPA implementation
         // Parameters from CSV header: deltaT=0, pressure=1000mb, temperature=10°C, elevation=0m
@@ -111,7 +114,10 @@ fn validate_grena3_basic_functionality() {
     ];
 
     for (datetime_str, latitude, longitude) in test_cases {
-        let datetime = datetime_str.parse::<DateTime<Utc>>().unwrap();
+        let utc_datetime = datetime_str.parse::<DateTime<Utc>>().unwrap();
+        let datetime = FixedOffset::east_opt(0)
+            .unwrap()
+            .from_utc_datetime(&utc_datetime.naive_utc());
 
         let result = grena3::solar_position(datetime, latitude, longitude, 69.0);
 
@@ -145,7 +151,10 @@ fn compare_spa_vs_grena3_accuracy() {
     ];
 
     for (datetime_str, latitude, longitude) in test_cases {
-        let datetime = datetime_str.parse::<DateTime<Utc>>().unwrap();
+        let utc_datetime = datetime_str.parse::<DateTime<Utc>>().unwrap();
+        let datetime = FixedOffset::east_opt(0)
+            .unwrap()
+            .from_utc_datetime(&utc_datetime.naive_utc());
         let delta_t = 69.0; // 2023 deltaT
 
         let spa_result = spa::solar_position(

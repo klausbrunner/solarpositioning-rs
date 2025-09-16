@@ -1,6 +1,6 @@
 //! Sunrise/sunset calculation example with different twilight types across diverse global locations.
 
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, FixedOffset, NaiveDate, TimeZone, Utc};
 use solar_positioning::{Horizon, spa, time::DeltaT, types::SunriseResult};
 
 #[derive(Debug)]
@@ -41,11 +41,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ];
 
     // Calculate for winter solstice - this shows the most extreme variations
-    let date = NaiveDate::from_ymd_opt(2023, 12, 21)
+    // Demonstrate different timezone types:
+
+    // Option 1: UTC timezone
+    let date_utc = Utc.with_ymd_and_hms(2023, 12, 21, 0, 0, 0).unwrap();
+
+    // Option 2: FixedOffset (keeping for comparison)
+    let _date_fixed = FixedOffset::east_opt(0)
         .unwrap()
-        .and_hms_opt(0, 0, 0)
-        .unwrap()
-        .and_utc();
+        .from_local_datetime(
+            &NaiveDate::from_ymd_opt(2023, 12, 21)
+                .unwrap()
+                .and_hms_opt(0, 0, 0)
+                .unwrap(),
+        )
+        .unwrap();
 
     let delta_t = DeltaT::estimate_from_date(2023, 12)?;
 
@@ -58,19 +68,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Date: December 21, 2023 (Winter Solstice)");
         println!();
 
-        calculate_and_print_times(date, city.latitude, city.longitude, delta_t)?;
+        // Use UTC timezone for calculations (both produce identical results)
+        calculate_and_print_times(date_utc, city.latitude, city.longitude, delta_t)?;
         println!();
     }
 
     Ok(())
 }
 
-fn calculate_and_print_times(
-    date: DateTime<Utc>,
+fn calculate_and_print_times<Tz: TimeZone>(
+    date: DateTime<Tz>,
     latitude: f64,
     longitude: f64,
     delta_t: f64,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), Box<dyn std::error::Error>>
+where
+    <Tz as TimeZone>::Offset: std::fmt::Display,
+{
     // Calculate all twilight types
     let horizons = [
         ("Sunrise/Sunset", Horizon::SunriseSunset),
@@ -80,14 +94,18 @@ fn calculate_and_print_times(
     ];
 
     for (name, horizon) in &horizons {
-        let result = spa::sunrise_sunset_for_horizon(date, latitude, longitude, delta_t, *horizon)?;
+        let result =
+            spa::sunrise_sunset_for_horizon(date.clone(), latitude, longitude, delta_t, *horizon)?;
         print_sunrise_result(name, &result);
     }
 
     Ok(())
 }
 
-fn print_sunrise_result(label: &str, result: &SunriseResult<DateTime<Utc>>) {
+fn print_sunrise_result<Tz: TimeZone>(label: &str, result: &SunriseResult<DateTime<Tz>>)
+where
+    <Tz as TimeZone>::Offset: std::fmt::Display,
+{
     println!("{}:", label);
     match result {
         SunriseResult::RegularDay {
@@ -95,17 +113,17 @@ fn print_sunrise_result(label: &str, result: &SunriseResult<DateTime<Utc>>) {
             transit,
             sunset,
         } => {
-            println!("  Begin: {}", sunrise.format("%H:%M:%S UTC"));
-            println!("  Transit: {}", transit.format("%H:%M:%S UTC"));
-            println!("  End: {}", sunset.format("%H:%M:%S UTC"));
+            println!("  Begin: {}", sunrise.format("%H:%M:%S %z"));
+            println!("  Transit: {}", transit.format("%H:%M:%S %z"));
+            println!("  End: {}", sunset.format("%H:%M:%S %z"));
         }
         SunriseResult::AllDay { transit } => {
             println!("  All day above horizon");
-            println!("  Transit: {}", transit.format("%H:%M:%S UTC"));
+            println!("  Transit: {}", transit.format("%H:%M:%S %z"));
         }
         SunriseResult::AllNight { transit } => {
             println!("  All night below horizon");
-            println!("  Transit: {}", transit.format("%H:%M:%S UTC"));
+            println!("  Transit: {}", transit.format("%H:%M:%S %z"));
         }
     }
     println!();

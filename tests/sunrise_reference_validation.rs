@@ -1,6 +1,6 @@
 //! Test sunrise/sunset calculations against reference data.
 
-use chrono::{DateTime, Timelike, Utc};
+use chrono::{DateTime, FixedOffset, TimeZone, Timelike, Utc};
 use csv::ReaderBuilder;
 use solar_positioning::{spa, types::SunriseResult};
 use std::error::Error;
@@ -49,13 +49,16 @@ fn time_difference_seconds(expected: &str, actual: &DateTime<Utc>) -> f64 {
 #[test]
 fn test_sunrise_sunset_debug_single_case() -> Result<(), Box<dyn Error>> {
     // Debug a single test case
-    let test_datetime = "1910-03-05T12:30:00Z".parse::<DateTime<Utc>>()?;
+    let test_datetime_utc = "1910-03-05T12:30:00Z".parse::<DateTime<Utc>>()?;
+    let test_datetime = FixedOffset::east_opt(0)
+        .unwrap()
+        .from_utc_datetime(&test_datetime_utc.naive_utc());
     let test_latitude = -36.840556;
     let test_longitude = 174.740000;
     let delta_t = 0.0;
 
     println!("=== DEBUG SINGLE CASE ===");
-    println!("Input: {}", test_datetime);
+    println!("Input: {}", test_datetime_utc);
     println!("Lat: {:.6}, Lon: {:.6}", test_latitude, test_longitude);
 
     // Java SPA returns: Sunrise=18:09:57, Transit=00:32:56, Sunset=06:56:15
@@ -91,7 +94,7 @@ fn test_sunrise_sunset_debug_single_case() -> Result<(), Box<dyn Error>> {
             );
 
             // Show the Julian date calculation details
-            let day_start = test_datetime
+            let day_start = test_datetime_utc
                 .date_naive()
                 .and_hms_opt(0, 0, 0)
                 .unwrap()
@@ -99,7 +102,10 @@ fn test_sunrise_sunset_debug_single_case() -> Result<(), Box<dyn Error>> {
             println!("Day start: {}", day_start);
 
             // Let's also check what day_start gives us
-            let jd = solar_positioning::time::JulianDate::from_datetime(day_start, delta_t)?;
+            let day_start_fixed = FixedOffset::east_opt(0)
+                .unwrap()
+                .from_utc_datetime(&day_start.naive_utc());
+            let jd = solar_positioning::time::JulianDate::from_datetime(&day_start_fixed, delta_t)?;
             println!("Julian Date: {:.6}", jd.julian_date());
             println!("JME: {:.6}", jd.julian_ephemeris_millennium());
 
@@ -139,7 +145,10 @@ fn test_sunrise_sunset_debug_single_case() -> Result<(), Box<dyn Error>> {
             println!("Expected elevation at sunrise: -0.833°");
 
             // Let's also check our position calculation at the expected transit time
-            let expected_transit_time = "1910-03-05T00:32:56Z".parse::<DateTime<Utc>>()?;
+            let expected_transit_time_utc = "1910-03-05T00:32:56Z".parse::<DateTime<Utc>>()?;
+            let expected_transit_time = FixedOffset::east_opt(0)
+                .unwrap()
+                .from_utc_datetime(&expected_transit_time_utc.naive_utc());
             let transit_position = spa::solar_position(
                 expected_transit_time,
                 test_latitude,
@@ -198,8 +207,11 @@ fn test_sunrise_sunset_against_spa_reference_data() -> Result<(), Box<dyn Error>
         // Use Delta T = 0 to match reference data
         let delta_t = 0.0;
 
+        let record_datetime_fixed = FixedOffset::east_opt(0)
+            .unwrap()
+            .from_utc_datetime(&record.datetime.naive_utc());
         match spa::sunrise_sunset(
-            record.datetime,
+            record_datetime_fixed,
             record.latitude,
             record.longitude,
             delta_t,
@@ -212,12 +224,15 @@ fn test_sunrise_sunset_against_spa_reference_data() -> Result<(), Box<dyn Error>
                         transit,
                         sunset,
                     } => {
+                        let sunrise_utc = sunrise.with_timezone(&Utc);
                         let sunrise_error =
-                            time_difference_seconds(&record.expected_sunrise, &sunrise);
+                            time_difference_seconds(&record.expected_sunrise, &sunrise_utc);
+                        let transit_utc = transit.with_timezone(&Utc);
                         let transit_error =
-                            time_difference_seconds(&record.expected_transit, &transit);
+                            time_difference_seconds(&record.expected_transit, &transit_utc);
+                        let sunset_utc = sunset.with_timezone(&Utc);
                         let sunset_error =
-                            time_difference_seconds(&record.expected_sunset, &sunset);
+                            time_difference_seconds(&record.expected_sunset, &sunset_utc);
 
                         max_sunrise_error = max_sunrise_error.max(sunrise_error);
                         max_transit_error = max_transit_error.max(transit_error);

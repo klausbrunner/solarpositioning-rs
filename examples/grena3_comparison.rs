@@ -1,16 +1,16 @@
 //! Compare SPA and Grena3 algorithms for speed vs accuracy trade-offs.
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, FixedOffset};
 use solar_positioning::{grena3, spa, time::DeltaT};
 use std::time::Instant;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let datetime = "2023-06-21T12:00:00Z".parse::<DateTime<Utc>>()?;
+    let datetime = "2023-06-21T12:00:00-07:00".parse::<DateTime<FixedOffset>>()?;
     let latitude = 37.7749; // San Francisco
     let longitude = -122.4194;
     let delta_t = DeltaT::estimate_from_date(2023, 6)?;
 
-    println!("Algorithm comparison for San Francisco on June 21, 2023:");
+    println!("Algorithm comparison for San Francisco on June 21, 2023 (Pacific Time):");
     println!();
 
     // SPA calculation

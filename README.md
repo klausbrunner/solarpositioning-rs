@@ -6,7 +6,7 @@ A Rust library for finding topocentric solar coordinates, i.e. the sun's positio
 
 ## Status
 
-This library is a port of the Java [solarpositioning](https://github.com/klausbrunner/solarpositioning) library to idiomatic Rust and should produce identical results. Unlike the very mature Java project though, it should be considered in _beta_ status for now.
+This library is a port of the Java [solarpositioning](https://github.com/klausbrunner/solarpositioning) library to idiomatic Rust and should produce identical results. Unlike the very mature Java project though, it should be considered in *beta* status for now.
 
 ## Usage
 
@@ -27,10 +27,11 @@ The API is intentionally "flat", comprising a handful of functions and simple st
 To get refraction-corrected topocentric coordinates:
 
 ```rust
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, FixedOffset};
 use solar_positioning::{spa, time::DeltaT};
 
-let datetime = "2025-06-21T12:00:00Z".parse::<DateTime<Utc>>().unwrap();
+// Use timezone-aware datetime (Vienna, Central European Time)
+let datetime = "2025-06-21T12:00:00+02:00".parse::<DateTime<FixedOffset>>().unwrap();
 
 // replace spa with grena3 as needed
 let position = spa::solar_position(
@@ -49,13 +50,17 @@ println!("{:?}", position);
 The spa module includes functions to calculate the times of sunrise, sun transit, and sunset in one fell swoop. The actual return type depends on the type of day (regular day, polar day, polar night).
 
 ```rust
-use solar_positioning::{spa, types::SunriseResult, Horizon};
+use chrono::{DateTime, FixedOffset};
+use solar_positioning::{spa, types::SunriseResult, Horizon, time::DeltaT};
+
+// Arctic location (Tromsø, Norway) in local time
+let datetime = "2025-06-21T00:00:00+02:00".parse::<DateTime<FixedOffset>>().unwrap();
 
 let result = spa::sunrise_sunset_for_horizon(
     datetime,
     70.978, // latitude
     25.974, // longitude
-    70.0,   // delta T
+    DeltaT::estimate_from_date(2025, 6).unwrap(), // delta T
     Horizon::SunriseSunset
 ).unwrap();
 
@@ -72,13 +77,16 @@ match result {
 Twilight start and end times can be obtained like sunrise and sunset, but assuming a different horizon:
 
 ```rust
-use solar_positioning::{spa, Horizon};
+use chrono::{DateTime, FixedOffset};
+use solar_positioning::{spa, Horizon, time::DeltaT};
+
+let datetime = "2025-06-21T00:00:00+02:00".parse::<DateTime<FixedOffset>>().unwrap();
 
 let result = spa::sunrise_sunset_for_horizon(
     datetime,
     70.978, // latitude
     25.974, // longitude
-    70.0,   // delta T
+    DeltaT::estimate_from_date(2025, 6).unwrap(), // delta T
     Horizon::CivilTwilight
 ).unwrap();
 ```

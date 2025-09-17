@@ -1,6 +1,6 @@
 [package]
 name = "solar-positioning"
-version = "0.2.1"
+version = "0.2.2-dev"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT"
@@ -43,9 +43,6 @@ std = []
 libm = ["dep:libm"]
 serde = ["dep:serde"]
 
-# Future features for SIMD optimizations
-# simd = ["packed_simd"]
-
 [profile.release]
 lto = true
 codegen-units = 1
@@ -55,11 +52,6 @@ panic = "abort"
 
 [profile.bench]
 debug = true
-
-# Benchmarks will be added later
-# [[bench]]
-# name = "algorithms"
-# harness = false
 
 [[example]]
 name = "basic_usage"

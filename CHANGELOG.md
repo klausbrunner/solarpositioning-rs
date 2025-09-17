@@ -2,12 +2,15 @@
 
 ## [Unreleased]
 
-## [0.1.0] - 2025-09-15
+### Added
+- `DeltaT::estimate_from_date_like()` - convenience method accepting any chrono `Datelike` type
+
+## [0.2.1] - 2025-09-16
 
 ### Added
 
 - Initial port from Java version
-- NREL SPA algorithm implementation
+- NREL SPA algorithm
 - Grena3 algorithm
 - Sunrise/sunset/twilight calculations
 - Support for all twilight types
@@ -15,6 +18,3 @@
 - Atmospheric refraction corrections
 - Comprehensive test coverage
 - Thread-safe API
-
-[Unreleased]: https://github.com/klausbrunner/solarpositioning-rs/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/klausbrunner/solarpositioning-rs/releases/tag/v0.1.0

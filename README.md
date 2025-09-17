@@ -39,7 +39,7 @@ let position = spa::solar_position(
     48.21,   // latitude (degrees)
     16.37,   // longitude (degrees)
     190.0,   // elevation (m)
-    DeltaT::estimate_from_date(2025, 6).unwrap(), // delta T (s, ~70s for 2025)
+    DeltaT::estimate_from_date_like(&datetime).unwrap(), // delta T (s, ~70s for 2025)
     1010.0,  // avg. air pressure (hPa)
     11.0     // avg. air temperature (°C)
 ).unwrap();
@@ -60,7 +60,7 @@ let result = spa::sunrise_sunset_for_horizon(
     datetime,
     70.978, // latitude
     25.974, // longitude
-    DeltaT::estimate_from_date(2025, 6).unwrap(), // delta T
+    DeltaT::estimate_from_date_like(&datetime).unwrap(), // delta T
     Horizon::SunriseSunset
 ).unwrap();
 
@@ -86,7 +86,7 @@ let result = spa::sunrise_sunset_for_horizon(
     datetime,
     70.978, // latitude
     25.974, // longitude
-    DeltaT::estimate_from_date(2025, 6).unwrap(), // delta T
+    DeltaT::estimate_from_date_like(&datetime).unwrap(), // delta T
     Horizon::CivilTwilight
 ).unwrap();
 ```

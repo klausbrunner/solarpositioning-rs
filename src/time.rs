@@ -415,6 +415,39 @@ impl DeltaT {
         let decimal_year = f64::from(year) + (f64::from(month) - 0.5) / 12.0;
         Self::estimate(decimal_year)
     }
+
+    /// Estimates ΔT from any date-like type.
+    ///
+    /// Convenience method that extracts the year and month from any chrono type
+    /// that implements `Datelike` (`DateTime`, `NaiveDateTime`, `NaiveDate`, etc.).
+    ///
+    /// # Arguments
+    /// * `date` - Any date-like type
+    ///
+    /// # Returns
+    /// Estimated ΔT in seconds
+    ///
+    /// # Errors
+    /// Returns error if the date components are invalid.
+    ///
+    /// # Example
+    /// ```
+    /// # use solar_positioning::time::DeltaT;
+    /// # use chrono::{DateTime, FixedOffset, NaiveDate};
+    ///
+    /// // Works with DateTime
+    /// let datetime = "2024-06-21T12:00:00-07:00".parse::<DateTime<FixedOffset>>().unwrap();
+    /// let delta_t = DeltaT::estimate_from_date_like(&datetime).unwrap();
+    /// assert!(delta_t > 60.0 && delta_t < 80.0);
+    ///
+    /// // Also works with NaiveDate
+    /// let date = NaiveDate::from_ymd_opt(2024, 6, 21).unwrap();
+    /// let delta_t2 = DeltaT::estimate_from_date_like(&date).unwrap();
+    /// assert_eq!(delta_t, delta_t2);
+    /// ```
+    pub fn estimate_from_date_like<D: Datelike>(date: &D) -> Result<f64> {
+        Self::estimate_from_date(date.year(), date.month())
+    }
 }
 
 #[cfg(test)]
@@ -527,6 +560,41 @@ mod tests {
         // Test invalid month
         assert!(DeltaT::estimate_from_date(2024, 13).is_err());
         assert!(DeltaT::estimate_from_date(2024, 0).is_err());
+    }
+
+    #[test]
+    fn test_delta_t_from_date_like() {
+        use chrono::{DateTime, FixedOffset, NaiveDate, Utc};
+
+        // Test with DateTime<FixedOffset>
+        let datetime_fixed = "2024-06-15T12:00:00-07:00"
+            .parse::<DateTime<FixedOffset>>()
+            .unwrap();
+        let delta_t_fixed = DeltaT::estimate_from_date_like(&datetime_fixed).unwrap();
+
+        // Test with DateTime<Utc>
+        let datetime_utc = "2024-06-15T19:00:00Z".parse::<DateTime<Utc>>().unwrap();
+        let delta_t_utc = DeltaT::estimate_from_date_like(&datetime_utc).unwrap();
+
+        // Test with NaiveDate
+        let naive_date = NaiveDate::from_ymd_opt(2024, 6, 15).unwrap();
+        let delta_t_naive_date = DeltaT::estimate_from_date_like(&naive_date).unwrap();
+
+        // Test with NaiveDateTime
+        let naive_datetime = naive_date.and_hms_opt(12, 0, 0).unwrap();
+        let delta_t_naive_datetime = DeltaT::estimate_from_date_like(&naive_datetime).unwrap();
+
+        // Should all be identical since we only use year/month
+        assert_eq!(delta_t_fixed, delta_t_utc);
+        assert_eq!(delta_t_fixed, delta_t_naive_date);
+        assert_eq!(delta_t_fixed, delta_t_naive_datetime);
+
+        // Should match estimate_from_date
+        let delta_t_date = DeltaT::estimate_from_date(2024, 6).unwrap();
+        assert_eq!(delta_t_fixed, delta_t_date);
+
+        // Verify reasonable range for 2024
+        assert!(delta_t_fixed > 60.0 && delta_t_fixed < 80.0);
     }
 
     #[test]

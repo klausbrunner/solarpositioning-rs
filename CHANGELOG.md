@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.2.2] - 2025-09-18
+
 ### Added
 - `DeltaT::estimate_from_date_like()` - convenience method accepting any chrono `Datelike` type
 

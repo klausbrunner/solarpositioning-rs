@@ -429,23 +429,17 @@ fn calculate_sunrise_sunset_spa_algorithm<Tz: TimeZone>(
 
     // Calculate initial transit time and check for polar conditions
     let m0 = (alpha_deltas[1].alpha - longitude - nu_degrees) / 360.0;
-    if let Some(polar_result) = check_polar_conditions(
-        day.clone(),
-        m0,
-        latitude,
-        elevation_angle,
-        alpha_deltas[1].delta,
-    ) {
-        return Ok(polar_result);
-    }
 
-    // Calculate approximate times and apply corrections
+    // Check for polar conditions but don't return early - we need to calculate accurate transit
+    let polar_type = check_polar_conditions_type(latitude, elevation_angle, alpha_deltas[1].delta);
+
+    // Calculate approximate times and apply corrections (needed for accurate transit time)
     let (m_values, _h0_degrees) =
         calculate_approximate_times(m0, latitude, elevation_angle, alpha_deltas[1].delta);
 
     // Apply final corrections to get accurate times
-    Ok(calculate_final_times(FinalTimeParams {
-        day,
+    let final_result = calculate_final_times(FinalTimeParams {
+        day: day.clone(),
         m_values,
         nu_degrees,
         delta_t,
@@ -453,7 +447,26 @@ fn calculate_sunrise_sunset_spa_algorithm<Tz: TimeZone>(
         longitude,
         elevation_angle,
         alpha_deltas,
-    }))
+    });
+
+    // Convert to appropriate polar result type if needed
+    match polar_type {
+        Some(PolarType::AllDay) => {
+            if let crate::SunriseResult::RegularDay { transit, .. } = final_result {
+                Ok(crate::SunriseResult::AllDay { transit })
+            } else {
+                Ok(final_result)
+            }
+        }
+        Some(PolarType::AllNight) => {
+            if let crate::SunriseResult::RegularDay { transit, .. } = final_result {
+                Ok(crate::SunriseResult::AllNight { transit })
+            } else {
+                Ok(final_result)
+            }
+        }
+        None => Ok(final_result),
+    }
 }
 
 /// A.2.1. Calculate apparent sidereal time and nutation parameters
@@ -514,6 +527,35 @@ fn check_polar_conditions<Tz: TimeZone>(
     } else if acos_arg > 1.0 {
         let transit = add_fraction_of_day(day, m0);
         Some(crate::SunriseResult::AllNight { transit })
+    } else {
+        None
+    }
+}
+
+/// Enum for polar condition types
+#[derive(Debug, Clone, Copy)]
+enum PolarType {
+    AllDay,
+    AllNight,
+}
+
+/// Check for polar day/night conditions and return the type (but don't return early)
+fn check_polar_conditions_type(
+    latitude: f64,
+    elevation_angle: f64,
+    delta1: f64,
+) -> Option<PolarType> {
+    let phi = degrees_to_radians(latitude);
+    let elevation_rad = degrees_to_radians(elevation_angle);
+    let delta1_rad = degrees_to_radians(delta1);
+
+    let acos_arg =
+        sin(phi).mul_add(-sin(delta1_rad), sin(elevation_rad)) / (cos(phi) * cos(delta1_rad));
+
+    if acos_arg < -1.0 {
+        Some(PolarType::AllDay)
+    } else if acos_arg > 1.0 {
+        Some(PolarType::AllNight)
     } else {
         None
     }
@@ -760,8 +802,19 @@ fn normalize_to_unit_range(val: f64) -> f64 {
 
 /// Add a fraction of a day to a date
 fn add_fraction_of_day<Tz: TimeZone>(day: DateTime<Tz>, fraction: f64) -> DateTime<Tz> {
-    let millis = (fraction * 24.0 * 60.0 * 60.0 * 1000.0) as i64;
-    day + chrono::Duration::milliseconds(millis)
+    // Match Java implementation exactly:
+    // 1. Truncate to start of day (like Java's truncatedTo(ChronoUnit.DAYS))
+    // 2. Calculate milliseconds as int (truncating fractional milliseconds)
+    // 3. Add the milliseconds
+    const MS_PER_DAY: i32 = 24 * 60 * 60 * 1000; // Use i32 like Java
+    let millis_plus = (f64::from(MS_PER_DAY) * fraction) as i32; // Cast to i32 like Java
+
+    let day_start = day
+        .timezone()
+        .from_local_datetime(&day.date_naive().and_hms_opt(0, 0, 0).unwrap())
+        .unwrap();
+
+    day_start + chrono::Duration::milliseconds(i64::from(millis_plus))
 }
 
 /// Limit to 0..1 if absolute value > 2 (Java limitIfNecessary)

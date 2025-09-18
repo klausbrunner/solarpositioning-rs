@@ -320,3 +320,40 @@ fn test_sunrise_sunset_against_spa_reference_data() -> Result<(), Box<dyn Error>
 
     Ok(())
 }
+
+#[test]
+fn test_polar_transit_accuracy_svalbard() -> Result<(), Box<dyn Error>> {
+    // Regression test for polar latitude transit accuracy
+    // Svalbard, Norway (78.0°N, 15.0°E) on 2024-01-01
+    // Should match solarpos reference: transit at 12:03:17+01:00
+    let latitude = 78.0;
+    let longitude = 15.0;
+    let tz = FixedOffset::east_opt(3600).unwrap();
+    let date = tz.with_ymd_and_hms(2024, 1, 1, 12, 0, 0).unwrap();
+
+    let result = spa::sunrise_sunset(date, latitude, longitude, 0.0, -0.833)?;
+
+    match result {
+        SunriseResult::AllNight { transit } => {
+            // Verify exact transit time matches solarpos reference
+            assert_eq!(transit.hour(), 12);
+            assert_eq!(transit.minute(), 3);
+            assert_eq!(transit.second(), 17);
+
+            // Verify azimuth is very close to 180° at transit
+            let pos = spa::solar_position(transit, latitude, longitude, 0.0, 0.0, 1013.25, 15.0)?;
+            let azimuth_error = (pos.azimuth() - 180.0).abs();
+            assert!(
+                azimuth_error < 0.001,
+                "Azimuth error {:.6}° exceeds tolerance",
+                azimuth_error
+            );
+        }
+        _ => panic!(
+            "Expected polar night for Svalbard in January, got: {:?}",
+            result
+        ),
+    }
+
+    Ok(())
+}

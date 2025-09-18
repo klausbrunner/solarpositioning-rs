@@ -63,6 +63,7 @@
     clippy::cast_precision_loss,
     clippy::cargo_common_metadata,
     clippy::multiple_crate_versions, // Acceptable for dev-dependencies
+    clippy::float_cmp, // Exact comparisons of mathematical constants in tests
 )]
 
 // Public API exports

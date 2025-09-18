@@ -439,7 +439,7 @@ fn calculate_sunrise_sunset_spa_algorithm<Tz: TimeZone>(
 
     // Apply final corrections to get accurate times
     let final_result = calculate_final_times(FinalTimeParams {
-        day: day.clone(),
+        day,
         m_values,
         nu_degrees,
         delta_t,

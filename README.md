@@ -10,11 +10,8 @@ This library is a port of the Java [solarpositioning](https://github.com/klausbr
 
 ## Usage
 
-### Cargo.toml
-
-```toml
-[dependencies]
-solar-positioning = "0.2.1"
+```sh
+cargo add solar-positioning
 ```
 
 ### Requirements

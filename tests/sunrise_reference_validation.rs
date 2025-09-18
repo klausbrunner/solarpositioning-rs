@@ -176,7 +176,7 @@ fn test_sunrise_sunset_debug_single_case() -> Result<(), Box<dyn Error>> {
 
 #[test]
 fn test_sunrise_sunset_against_spa_reference_data() -> Result<(), Box<dyn Error>> {
-    let file = File::open("tests/data/spa_reference_testdata.csv")?;
+    let file = File::open("tests/data/test/sunrise/spa_reference_testdata.csv")?;
     let mut reader = ReaderBuilder::new()
         .comment(Some(b'#'))
         .has_headers(false)
@@ -238,13 +238,15 @@ fn test_sunrise_sunset_against_spa_reference_data() -> Result<(), Box<dyn Error>
                         max_transit_error = max_transit_error.max(transit_error);
                         max_sunset_error = max_sunset_error.max(sunset_error);
 
-                        // Allow tolerance of 120 seconds (2 minutes) for sunrise/sunset calculations
-                        // This accounts for atmospheric refraction and algorithmic differences
-                        let tolerance = 120.0;
+                        // Different tolerances for different calculations:
+                        // Transit times should be most accurate (sun at meridian, minimal atmospheric effects)
+                        let transit_tolerance = 1.0; // 1 second for transit
+                        // Sunrise/sunset have more atmospheric uncertainty at horizon
+                        let horizon_tolerance = 120.0; // 2 minutes for sunrise/sunset
 
-                        if sunrise_error > tolerance
-                            || sunset_error > tolerance
-                            || transit_error > tolerance
+                        if sunrise_error > horizon_tolerance
+                            || sunset_error > horizon_tolerance
+                            || transit_error > transit_tolerance
                         {
                             println!(
                                 "Record {}: DateTime={}, Lat={:.6}, Lon={:.6}",
@@ -294,28 +296,29 @@ fn test_sunrise_sunset_against_spa_reference_data() -> Result<(), Box<dyn Error>
     println!("Maximum sunset error: {:.1} seconds", max_sunset_error);
     println!("Failed cases: {}", failed_cases);
 
-    // Sunrise/sunset calculations should be accurate within 2 minutes
-    let tolerance = 120.0;
+    // Different tolerances for different calculations
+    let transit_tolerance = 1.0; // Transit should be most accurate
+    let horizon_tolerance = 120.0; // Sunrise/sunset have atmospheric uncertainty
 
     assert!(
-        max_sunrise_error < tolerance,
+        max_sunrise_error < horizon_tolerance,
         "Maximum sunrise error {:.1}s exceeds tolerance {:.1}s",
         max_sunrise_error,
-        tolerance
+        horizon_tolerance
     );
 
     assert!(
-        max_transit_error < tolerance,
+        max_transit_error < transit_tolerance,
         "Maximum transit error {:.1}s exceeds tolerance {:.1}s",
         max_transit_error,
-        tolerance
+        transit_tolerance
     );
 
     assert!(
-        max_sunset_error < tolerance,
+        max_sunset_error < horizon_tolerance,
         "Maximum sunset error {:.1}s exceeds tolerance {:.1}s",
         max_sunset_error,
-        tolerance
+        horizon_tolerance
     );
 
     Ok(())

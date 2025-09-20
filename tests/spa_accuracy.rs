@@ -6,36 +6,8 @@ use solar_positioning::spa;
 use std::error::Error;
 use std::fs::File;
 
-#[derive(Debug)]
-struct SpaTestRecord {
-    datetime: DateTime<Utc>,
-    latitude: f64,
-    longitude: f64,
-    expected_azimuth: f64,
-    expected_zenith: f64,
-}
-
-impl SpaTestRecord {
-    fn from_csv_record(record: &csv::StringRecord) -> Result<Self, Box<dyn Error>> {
-        let datetime_str = record.get(0).ok_or("Missing datetime")?;
-        let latitude: f64 = record.get(1).ok_or("Missing latitude")?.parse()?;
-        let longitude: f64 = record.get(2).ok_or("Missing longitude")?.parse()?;
-        let expected_azimuth: f64 = record.get(3).ok_or("Missing azimuth")?.parse()?;
-        let expected_zenith: f64 = record.get(4).ok_or("Missing zenith")?.parse()?;
-
-        let datetime = datetime_str.parse::<DateTime<Utc>>()?;
-
-        Ok(Self {
-            datetime,
-            latitude,
-            longitude,
-            expected_azimuth,
-            expected_zenith,
-        })
-    }
-}
-
-fn load_spa_reference_data() -> Result<Vec<SpaTestRecord>, Box<dyn Error>> {
+#[allow(clippy::type_complexity)]
+fn load_spa_reference_data() -> Result<Vec<(DateTime<Utc>, f64, f64, f64, f64)>, Box<dyn Error>> {
     let file = File::open("tests/data/spa_reference_testdata.csv")?;
     let mut reader = ReaderBuilder::new()
         .comment(Some(b'#'))
@@ -45,14 +17,19 @@ fn load_spa_reference_data() -> Result<Vec<SpaTestRecord>, Box<dyn Error>> {
     let mut records = Vec::new();
     for result in reader.records() {
         let record = result?;
-        if !record.is_empty() && record.len() >= 5 {
-            match SpaTestRecord::from_csv_record(&record) {
-                Ok(test_record) => records.push(test_record),
-                Err(e) => {
-                    eprintln!("Warning: Failed to parse record {:?}: {}", record, e);
-                    continue;
-                }
-            }
+        if record.len() >= 5 {
+            let datetime = record[0].parse::<DateTime<Utc>>()?;
+            let latitude: f64 = record[1].parse()?;
+            let longitude: f64 = record[2].parse()?;
+            let expected_azimuth: f64 = record[3].parse()?;
+            let expected_zenith: f64 = record[4].parse()?;
+            records.push((
+                datetime,
+                latitude,
+                longitude,
+                expected_azimuth,
+                expected_zenith,
+            ));
         }
     }
 
@@ -72,22 +49,24 @@ fn test_spa_accuracy_against_nrel_reference() -> Result<(), Box<dyn Error>> {
     let mut error_count = 0;
 
     // Test parameters from NREL reference: elevation=0, pressure=1000, temperature=10, deltaT=0
-    for (i, record) in test_records.iter().enumerate() {
+    for (i, (datetime, latitude, longitude, expected_azimuth, expected_zenith)) in
+        test_records.iter().enumerate()
+    {
         let datetime_fixed = FixedOffset::east_opt(0)
             .unwrap()
-            .from_utc_datetime(&record.datetime.naive_utc());
+            .from_utc_datetime(&datetime.naive_utc());
         match spa::solar_position(
             datetime_fixed,
-            record.latitude,
-            record.longitude,
+            *latitude,
+            *longitude,
             0.0,    // elevation (meters)
             0.0,    // deltaT (seconds) - reference uses 0
             1000.0, // pressure (millibars)
             10.0,   // temperature (°C)
         ) {
             Ok(position) => {
-                let azimuth_error = (position.azimuth() - record.expected_azimuth).abs();
-                let zenith_error = (position.zenith_angle() - record.expected_zenith).abs();
+                let azimuth_error = (position.azimuth() - expected_azimuth).abs();
+                let zenith_error = (position.zenith_angle() - expected_zenith).abs();
 
                 max_azimuth_error = max_azimuth_error.max(azimuth_error);
                 max_zenith_error = max_zenith_error.max(zenith_error);
@@ -99,11 +78,11 @@ fn test_spa_accuracy_against_nrel_reference() -> Result<(), Box<dyn Error>> {
                 if azimuth_error > tolerance || zenith_error > tolerance {
                     println!(
                         "Record {}: DateTime={}, Lat={:.6}, Lon={:.6}",
-                        i, record.datetime, record.latitude, record.longitude
+                        i, datetime, latitude, longitude
                     );
                     println!(
                         "  Expected: Az={:.6}°, Zen={:.6}°",
-                        record.expected_azimuth, record.expected_zenith
+                        expected_azimuth, expected_zenith
                     );
                     println!(
                         "  Actual:   Az={:.6}°, Zen={:.6}°",

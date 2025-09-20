@@ -72,6 +72,7 @@ const SECONDS_PER_HOUR: f64 = 3600.0;
 /// println!("Azimuth: {:.3}°", position.azimuth());
 /// println!("Elevation: {:.3}°", position.elevation_angle());
 /// ```
+#[allow(clippy::needless_pass_by_value)]
 pub fn solar_position<Tz: TimeZone>(
     datetime: DateTime<Tz>,
     latitude: f64,
@@ -387,6 +388,7 @@ fn calculate_topocentric_zenith_angle(pressure: f64, temperature: f64, e_zero: f
 ///     -0.833     // standard sunrise/sunset angle
 /// ).unwrap();
 /// ```
+#[allow(clippy::needless_pass_by_value)]
 pub fn sunrise_sunset<Tz: TimeZone>(
     date: DateTime<Tz>,
     latitude: f64,
@@ -470,6 +472,7 @@ fn calculate_sunrise_sunset_spa_algorithm<Tz: TimeZone>(
 }
 
 /// A.2.1. Calculate apparent sidereal time and nutation parameters
+#[allow(clippy::needless_pass_by_value)]
 fn calculate_sidereal_time_and_nutation<Tz: TimeZone>(
     day_start: DateTime<Tz>,
 ) -> (f64, DeltaPsiEpsilon, f64) {
@@ -488,6 +491,7 @@ fn calculate_sidereal_time_and_nutation<Tz: TimeZone>(
 }
 
 /// A.2.2. Calculate alpha/delta for day before, same day, and next day
+#[allow(clippy::needless_pass_by_value)]
 fn calculate_alpha_deltas_for_three_days<Tz: TimeZone>(
     day_start: DateTime<Tz>,
     delta_psi_epsilon: DeltaPsiEpsilon,
@@ -801,6 +805,7 @@ fn normalize_to_unit_range(val: f64) -> f64 {
 }
 
 /// Add a fraction of a day to a date
+#[allow(clippy::needless_pass_by_value)]
 fn add_fraction_of_day<Tz: TimeZone>(day: DateTime<Tz>, fraction: f64) -> DateTime<Tz> {
     // Match Java implementation exactly:
     // 1. Truncate to start of day (like Java's truncatedTo(ChronoUnit.DAYS))
@@ -930,6 +935,7 @@ where
 }
 
 /// Internal helper that uses precomputed values for efficiency
+#[allow(clippy::needless_pass_by_value)]
 fn calculate_sunrise_sunset_spa_algorithm_with_precomputed<Tz: TimeZone>(
     day: DateTime<Tz>,
     latitude: f64,

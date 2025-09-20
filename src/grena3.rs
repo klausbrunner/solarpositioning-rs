@@ -77,6 +77,7 @@ pub fn solar_position<Tz: TimeZone>(
 ///
 /// # Errors
 /// Returns error for invalid coordinates (latitude outside ±90°, longitude outside ±180°)
+#[allow(clippy::needless_pass_by_value)]
 pub fn solar_position_with_refraction<Tz: TimeZone>(
     datetime: DateTime<Tz>,
     latitude: f64,

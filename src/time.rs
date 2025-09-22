@@ -437,15 +437,16 @@ impl DeltaT {
     ///
     /// // Works with DateTime
     /// let datetime = "2024-06-21T12:00:00-07:00".parse::<DateTime<FixedOffset>>().unwrap();
-    /// let delta_t = DeltaT::estimate_from_date_like(&datetime).unwrap();
+    /// let delta_t = DeltaT::estimate_from_date_like(datetime).unwrap();
     /// assert!(delta_t > 60.0 && delta_t < 80.0);
     ///
     /// // Also works with NaiveDate
     /// let date = NaiveDate::from_ymd_opt(2024, 6, 21).unwrap();
-    /// let delta_t2 = DeltaT::estimate_from_date_like(&date).unwrap();
+    /// let delta_t2 = DeltaT::estimate_from_date_like(date).unwrap();
     /// assert_eq!(delta_t, delta_t2);
     /// ```
-    pub fn estimate_from_date_like<D: Datelike>(date: &D) -> Result<f64> {
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn estimate_from_date_like<D: Datelike>(date: D) -> Result<f64> {
         Self::estimate_from_date(date.year(), date.month())
     }
 }
@@ -570,19 +571,19 @@ mod tests {
         let datetime_fixed = "2024-06-15T12:00:00-07:00"
             .parse::<DateTime<FixedOffset>>()
             .unwrap();
-        let delta_t_fixed = DeltaT::estimate_from_date_like(&datetime_fixed).unwrap();
+        let delta_t_fixed = DeltaT::estimate_from_date_like(datetime_fixed).unwrap();
 
         // Test with DateTime<Utc>
         let datetime_utc = "2024-06-15T19:00:00Z".parse::<DateTime<Utc>>().unwrap();
-        let delta_t_utc = DeltaT::estimate_from_date_like(&datetime_utc).unwrap();
+        let delta_t_utc = DeltaT::estimate_from_date_like(datetime_utc).unwrap();
 
         // Test with NaiveDate
         let naive_date = NaiveDate::from_ymd_opt(2024, 6, 15).unwrap();
-        let delta_t_naive_date = DeltaT::estimate_from_date_like(&naive_date).unwrap();
+        let delta_t_naive_date = DeltaT::estimate_from_date_like(naive_date).unwrap();
 
         // Test with NaiveDateTime
         let naive_datetime = naive_date.and_hms_opt(12, 0, 0).unwrap();
-        let delta_t_naive_datetime = DeltaT::estimate_from_date_like(&naive_datetime).unwrap();
+        let delta_t_naive_datetime = DeltaT::estimate_from_date_like(naive_datetime).unwrap();
 
         // Should all be identical since we only use year/month
         assert_eq!(delta_t_fixed, delta_t_utc);

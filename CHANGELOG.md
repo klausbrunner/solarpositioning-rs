@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.3.1] - 2025-09-22
+
+### Changed
+
+- **BREAKING** fix: `DeltaT::estimate_from_date_like()` now takes parameter by value instead of reference
+
 ## [0.3.0] - 2025-09-22
 
 ### Added

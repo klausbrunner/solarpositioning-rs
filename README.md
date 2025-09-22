@@ -36,7 +36,7 @@ let position = spa::solar_position(
     48.21,   // latitude (degrees)
     16.37,   // longitude (degrees)
     190.0,   // elevation (m)
-    DeltaT::estimate_from_date_like(&datetime).unwrap(), // delta T (s, ~70s for 2025)
+    DeltaT::estimate_from_date_like(datetime).unwrap(), // delta T (s, ~70s for 2025)
     Some(RefractionCorrection::new(1010.0, 11.0).unwrap()) // atmospheric conditions
 ).unwrap();
 
@@ -50,7 +50,7 @@ use chrono::{DateTime, FixedOffset};
 use solar_positioning::{spa, time::DeltaT, RefractionCorrection};
 
 let datetime = "2025-06-21T12:00:00+02:00".parse::<DateTime<FixedOffset>>().unwrap();
-let delta_t = DeltaT::estimate_from_date_like(&datetime).unwrap();
+let delta_t = DeltaT::estimate_from_date_like(datetime).unwrap();
 
 // Calculate time-dependent parts once
 let time_dependent = spa::spa_time_dependent_parts(datetime, delta_t).unwrap();
@@ -81,7 +81,7 @@ let result = spa::sunrise_sunset_for_horizon(
     datetime,
     70.978, // latitude
     25.974, // longitude
-    DeltaT::estimate_from_date_like(&datetime).unwrap(), // delta T
+    DeltaT::estimate_from_date_like(datetime).unwrap(), // delta T
     Horizon::SunriseSunset
 ).unwrap();
 
@@ -107,7 +107,7 @@ let result = spa::sunrise_sunset_for_horizon(
     datetime,
     70.978, // latitude
     25.974, // longitude
-    DeltaT::estimate_from_date_like(&datetime).unwrap(), // delta T
+    DeltaT::estimate_from_date_like(datetime).unwrap(), // delta T
     Horizon::CivilTwilight
 ).unwrap();
 ```

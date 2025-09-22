@@ -1,7 +1,7 @@
 //! Basic solar position calculation example.
 
 use chrono::{DateTime, FixedOffset, TimeZone, Utc};
-use solar_positioning::{spa, time::DeltaT};
+use solar_positioning::{RefractionCorrection, spa, time::DeltaT};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Example 1: Calculate solar position using FixedOffset timezone
@@ -20,10 +20,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         datetime_fixed,
         latitude,
         longitude,
-        0.0,     // elevation (m)
-        delta_t, // deltaT (s)
-        1013.25, // pressure (hPa)
-        15.0,    // temperature (°C)
+        0.0,                                             // elevation (m)
+        delta_t,                                         // deltaT (s)
+        Some(RefractionCorrection::new(1013.25, 15.0)?), // atmospheric conditions
     )?;
 
     // Same calculation using UTC timezone
@@ -31,10 +30,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         datetime_utc,
         latitude,
         longitude,
-        0.0,     // elevation (m)
-        delta_t, // deltaT (s)
-        1013.25, // pressure (hPa)
-        15.0,    // temperature (°C)
+        0.0,                                             // elevation (m)
+        delta_t,                                         // deltaT (s)
+        Some(RefractionCorrection::new(1013.25, 15.0)?), // atmospheric conditions
     )?;
 
     println!("Solar position for San Francisco on June 21, 2023 at noon Pacific Time:");

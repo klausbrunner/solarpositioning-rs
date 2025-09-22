@@ -1,7 +1,7 @@
 //! Comprehensive validation against the same CSV reference data used in the Java version.
 
 use chrono::{DateTime, FixedOffset, TimeZone, Utc};
-use solar_positioning::{grena3, spa};
+use solar_positioning::{RefractionCorrection, grena3, spa};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 
@@ -45,10 +45,12 @@ fn validate_spa_against_csv_reference_data() {
         // Calculate with our SPA implementation
         // Parameters from CSV header: deltaT=0, pressure=1000mb, temperature=10°C, elevation=0m
         let result = spa::solar_position(
-            datetime, latitude, longitude, 0.0,    // elevation
-            0.0,    // deltaT
-            1000.0, // pressure
-            10.0,   // temperature
+            datetime,
+            latitude,
+            longitude,
+            0.0,                                                    // elevation
+            0.0,                                                    // deltaT
+            Some(RefractionCorrection::new(1000.0, 10.0).unwrap()), // atmospheric conditions
         );
 
         assert!(
@@ -119,7 +121,7 @@ fn validate_grena3_basic_functionality() {
             .unwrap()
             .from_utc_datetime(&utc_datetime.naive_utc());
 
-        let result = grena3::solar_position(datetime, latitude, longitude, 69.0);
+        let result = grena3::solar_position(datetime, latitude, longitude, 69.0, None);
 
         assert!(
             result.is_ok(),
@@ -158,16 +160,11 @@ fn compare_spa_vs_grena3_accuracy() {
         let delta_t = 69.0; // 2023 deltaT
 
         let spa_result = spa::solar_position(
-            datetime,
-            latitude,
-            longitude,
-            0.0,
-            delta_t,
-            f64::NAN,
-            f64::NAN,
+            datetime, latitude, longitude, 0.0, delta_t, None, // No refraction correction
         )
         .unwrap();
-        let grena3_result = grena3::solar_position(datetime, latitude, longitude, delta_t).unwrap();
+        let grena3_result =
+            grena3::solar_position(datetime, latitude, longitude, delta_t, None).unwrap();
 
         let azimuth_diff = (spa_result.azimuth() - grena3_result.azimuth()).abs();
         let zenith_diff = (spa_result.zenith_angle() - grena3_result.zenith_angle()).abs();

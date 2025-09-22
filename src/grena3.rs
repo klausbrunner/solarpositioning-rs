@@ -10,14 +10,12 @@
 #![allow(clippy::many_single_char_names)]
 #![allow(clippy::suboptimal_flops)]
 
-use crate::error::{
-    check_coordinates, check_pressure, check_refraction_params_usable, check_temperature,
-};
+use crate::error::check_coordinates;
 use crate::math::{
     PI, asin, atan2, cos, degrees_to_radians, normalize_degrees_0_to_360, radians_to_degrees, sin,
     sqrt, tan,
 };
-use crate::{Result, SolarPosition};
+use crate::{RefractionCorrection, Result, SolarPosition};
 use chrono::{DateTime, Datelike, TimeZone, Timelike};
 
 /// Calculate solar position using the Grena3 algorithm.
@@ -39,62 +37,41 @@ use chrono::{DateTime, Datelike, TimeZone, Timelike};
 ///
 /// # Example
 /// ```rust
-/// use solar_positioning::grena3;
+/// use solar_positioning::{grena3, RefractionCorrection};
 /// use chrono::{DateTime, FixedOffset};
 ///
 /// let datetime = "2023-06-21T12:00:00-07:00".parse::<DateTime<FixedOffset>>().unwrap();
+///
+/// // Without refraction correction
 /// let position = grena3::solar_position(
 ///     datetime,
 ///     37.7749,     // San Francisco latitude
 ///     -122.4194,   // San Francisco longitude
 ///     69.0,        // deltaT (seconds)
+///     None,        // no atmospheric refraction correction
+/// ).unwrap();
+///
+/// // With refraction correction
+/// let position_with_refraction = grena3::solar_position(
+///     datetime,
+///     37.7749,     // San Francisco latitude
+///     -122.4194,   // San Francisco longitude
+///     69.0,        // deltaT (seconds)
+///     Some(RefractionCorrection::standard()), // standard atmospheric conditions
 /// ).unwrap();
 ///
 /// println!("Azimuth: {:.3}°", position.azimuth());
 /// println!("Elevation: {:.3}°", position.elevation_angle());
 /// ```
+#[allow(clippy::needless_pass_by_value)]
 pub fn solar_position<Tz: TimeZone>(
     datetime: DateTime<Tz>,
     latitude: f64,
     longitude: f64,
     delta_t: f64,
-) -> Result<SolarPosition> {
-    solar_position_with_refraction(datetime, latitude, longitude, delta_t, None, None)
-}
-
-/// Calculate solar position using the Grena3 algorithm with optional refraction correction.
-///
-/// # Arguments
-/// * `datetime` - Timezone-aware date and time
-/// * `latitude` - Observer latitude in degrees (-90 to +90)
-/// * `longitude` - Observer longitude in degrees (-180 to +180)
-/// * `delta_t` - ΔT in seconds (difference between TT and UT1)
-/// * `pressure` - Optional atmospheric pressure in millibars (for refraction correction)
-/// * `temperature` - Optional temperature in °C (for refraction correction)
-///
-/// # Returns
-/// Solar position or error
-///
-/// # Errors
-/// Returns error for invalid coordinates (latitude outside ±90°, longitude outside ±180°)
-#[allow(clippy::needless_pass_by_value)]
-pub fn solar_position_with_refraction<Tz: TimeZone>(
-    datetime: DateTime<Tz>,
-    latitude: f64,
-    longitude: f64,
-    delta_t: f64,
-    pressure: Option<f64>,
-    temperature: Option<f64>,
+    refraction: Option<RefractionCorrection>,
 ) -> Result<SolarPosition> {
     check_coordinates(latitude, longitude)?;
-
-    // Validate optional atmospheric parameters if provided
-    if let Some(p) = pressure {
-        check_pressure(p)?;
-    }
-    if let Some(t) = temperature {
-        check_temperature(t)?;
-    }
 
     // Calculate t (days since 2000-01-01 12:00:00 TT)
     let t = calc_t(&datetime);
@@ -143,16 +120,17 @@ pub fn solar_position_with_refraction<Tz: TimeZone>(
     let e_p = asin(s_epsilon0) - 4.26e-5 * sqrt(1.0 - s_epsilon0 * s_epsilon0);
     let gamma = atan2(s_h, c_h * s_phi - s_delta * c_phi / c_delta);
 
-    // Apply refraction correction if parameters are usable
-    let delta_re = if let (Some(p), Some(t)) = (pressure, temperature) {
-        if check_refraction_params_usable(p, t) && e_p > 0.0 {
-            (0.08422 * (p / 1000.0)) / ((273.0 + t) * tan(e_p + 0.003138 / (e_p + 0.08919)))
+    // Apply refraction correction if provided and sun is visible
+    let delta_re = refraction.map_or(0.0, |correction| {
+        if e_p > 0.0 {
+            let pressure = correction.pressure();
+            let temperature = correction.temperature();
+            (0.08422 * (pressure / 1000.0))
+                / ((273.0 + temperature) * tan(e_p + 0.003138 / (e_p + 0.08919)))
         } else {
             0.0
         }
-    } else {
-        0.0
-    };
+    });
 
     let z = PI / 2.0 - e_p - delta_re;
 
@@ -197,7 +175,7 @@ mod tests {
             .parse::<DateTime<FixedOffset>>()
             .unwrap();
 
-        let result = solar_position(datetime, 37.7749, -122.4194, 69.0);
+        let result = solar_position(datetime, 37.7749, -122.4194, 69.0, None);
 
         assert!(result.is_ok());
         let position = result.unwrap();
@@ -211,13 +189,12 @@ mod tests {
             .parse::<DateTime<FixedOffset>>()
             .unwrap();
 
-        let result = solar_position_with_refraction(
+        let result = solar_position(
             datetime,
             37.7749,
             -122.4194,
             69.0,
-            Some(1013.25),
-            Some(15.0),
+            Some(RefractionCorrection::new(1013.25, 15.0).unwrap()),
         );
 
         assert!(result.is_ok());
@@ -233,10 +210,10 @@ mod tests {
             .unwrap();
 
         // Invalid latitude
-        assert!(solar_position(datetime, 95.0, 0.0, 0.0).is_err());
+        assert!(solar_position(datetime, 95.0, 0.0, 0.0, None).is_err());
 
         // Invalid longitude
-        assert!(solar_position(datetime, 0.0, 185.0, 0.0).is_err());
+        assert!(solar_position(datetime, 0.0, 185.0, 0.0, None).is_err());
     }
 
     #[test]

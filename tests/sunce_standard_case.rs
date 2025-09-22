@@ -62,7 +62,15 @@ fn test_sunce_standard_case_optimization() {
 
     for &time in test_times {
         for &(lat, lon) in test_coords {
-            let _result = spa::solar_position(time, lat, lon, 0.0, 69.0, 1013.25, 15.0).unwrap();
+            let _result = spa::solar_position(
+                time,
+                lat,
+                lon,
+                0.0,
+                69.0,
+                Some(solar_positioning::RefractionCorrection::new(1013.25, 15.0).unwrap()),
+            )
+            .unwrap();
             naive_count += 1;
         }
     }
@@ -81,7 +89,13 @@ fn test_sunce_standard_case_optimization() {
 
         for &(lat, lon) in test_coords {
             let _result = spa::spa_with_time_dependent_parts(
-                time, lat, lon, 0.0, 69.0, 1013.25, 15.0, time_parts,
+                time,
+                lat,
+                lon,
+                0.0,
+                69.0,
+                Some(solar_positioning::RefractionCorrection::new(1013.25, 15.0).unwrap()),
+                time_parts,
             )
             .unwrap();
             cached_count += 1;

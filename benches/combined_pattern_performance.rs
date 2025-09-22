@@ -49,8 +49,10 @@ fn benchmark_combined_patterns(c: &mut Criterion) {
                                 black_box(lon),
                                 black_box(0.0),
                                 black_box(69.0),
-                                black_box(1013.25),
-                                black_box(15.0),
+                                black_box(Some(
+                                    solar_positioning::RefractionCorrection::new(1013.25, 15.0)
+                                        .unwrap(),
+                                )),
                             )
                             .unwrap();
                         }
@@ -79,8 +81,10 @@ fn benchmark_combined_patterns(c: &mut Criterion) {
                                 black_box(lon),
                                 black_box(0.0),
                                 black_box(69.0),
-                                black_box(1013.25),
-                                black_box(15.0),
+                                black_box(Some(
+                                    solar_positioning::RefractionCorrection::new(1013.25, 15.0)
+                                        .unwrap(),
+                                )),
                                 black_box(time_parts),
                             )
                             .unwrap();
@@ -133,8 +137,10 @@ fn benchmark_optimization_scaling(c: &mut Criterion) {
                                 black_box(lon),
                                 black_box(0.0),
                                 black_box(69.0),
-                                black_box(1013.25),
-                                black_box(15.0),
+                                black_box(Some(
+                                    solar_positioning::RefractionCorrection::new(1013.25, 15.0)
+                                        .unwrap(),
+                                )),
                                 black_box(time_parts),
                             )
                             .unwrap();

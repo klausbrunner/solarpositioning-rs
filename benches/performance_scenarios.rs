@@ -4,11 +4,13 @@ use solar_positioning::{grena3, spa};
 
 /// Benchmark configuration for different usage patterns
 #[derive(Clone)]
+#[allow(dead_code)]
 struct BenchmarkScenario {
     name: &'static str,
     description: &'static str,
 }
 
+#[allow(dead_code)]
 const SCENARIOS: &[BenchmarkScenario] = &[
     BenchmarkScenario {
         name: "single_calculation",
@@ -45,8 +47,9 @@ fn benchmark_single_calculation(c: &mut Criterion) {
                 black_box(lon),
                 black_box(0.0),
                 black_box(69.0),
-                black_box(1013.25),
-                black_box(15.0),
+                black_box(Some(
+                    solar_positioning::RefractionCorrection::new(1013.25, 15.0).unwrap(),
+                )),
             )
             .unwrap()
         })
@@ -59,6 +62,7 @@ fn benchmark_single_calculation(c: &mut Criterion) {
                 black_box(lat),
                 black_box(lon),
                 black_box(69.0),
+                black_box(None),
             )
             .unwrap()
         })
@@ -89,8 +93,9 @@ fn benchmark_time_series_fixed_location(c: &mut Criterion) {
                         black_box(lon),
                         black_box(0.0),
                         black_box(69.0),
-                        black_box(1013.25),
-                        black_box(15.0),
+                        black_box(Some(
+                            solar_positioning::RefractionCorrection::new(1013.25, 15.0).unwrap(),
+                        )),
                     )
                     .unwrap();
                 }
@@ -105,6 +110,7 @@ fn benchmark_time_series_fixed_location(c: &mut Criterion) {
                         black_box(lat),
                         black_box(lon),
                         black_box(69.0),
+                        black_box(None),
                     )
                     .unwrap();
                 }
@@ -147,8 +153,10 @@ fn benchmark_coordinate_sweep_fixed_time(c: &mut Criterion) {
                             black_box(lon),
                             black_box(0.0),
                             black_box(69.0),
-                            black_box(1013.25),
-                            black_box(15.0),
+                            black_box(Some(
+                                solar_positioning::RefractionCorrection::new(1013.25, 15.0)
+                                    .unwrap(),
+                            )),
                         )
                         .unwrap();
                     }
@@ -167,6 +175,7 @@ fn benchmark_coordinate_sweep_fixed_time(c: &mut Criterion) {
                             black_box(lat),
                             black_box(lon),
                             black_box(69.0),
+                            black_box(None),
                         )
                         .unwrap();
                     }
@@ -211,8 +220,10 @@ fn benchmark_mixed_coordinates_and_times(c: &mut Criterion) {
                             black_box(lon),
                             black_box(0.0),
                             black_box(69.0),
-                            black_box(1013.25),
-                            black_box(15.0),
+                            black_box(Some(
+                                solar_positioning::RefractionCorrection::new(1013.25, 15.0)
+                                    .unwrap(),
+                            )),
                         )
                         .unwrap();
                     }

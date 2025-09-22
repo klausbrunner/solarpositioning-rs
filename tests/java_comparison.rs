@@ -1,7 +1,7 @@
 //! Test to compare results with the Java implementation.
 
 use chrono::{DateTime, FixedOffset, TimeZone, Utc};
-use solar_positioning::spa;
+use solar_positioning::{RefractionCorrection, spa};
 
 #[test]
 fn test_compare_with_java_spa() {
@@ -25,10 +25,12 @@ fn test_compare_with_java_spa() {
     println!("Expected zenith: {:.6}°", expected_zenith);
 
     let result = spa::solar_position(
-        datetime, latitude, longitude, 0.0,    // elevation (same as reference)
-        0.0,    // deltaT (same as reference)
-        1000.0, // pressure (same as reference)
-        10.0,   // temperature (same as reference)
+        datetime,
+        latitude,
+        longitude,
+        0.0,                                                    // elevation (same as reference)
+        0.0,                                                    // deltaT (same as reference)
+        Some(RefractionCorrection::new(1000.0, 10.0).unwrap()), // atmospheric conditions
     );
 
     assert!(result.is_ok());

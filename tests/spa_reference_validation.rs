@@ -1,7 +1,7 @@
 //! Validate SPA implementation against NREL reference data.
 
 use chrono::{DateTime, FixedOffset, TimeZone, Utc};
-use solar_positioning::spa;
+use solar_positioning::{RefractionCorrection, spa};
 
 const EPSILON: f64 = 0.001; // Allow 0.001° deviation for floating-point differences
 
@@ -55,10 +55,12 @@ fn validate_against_nrel_reference_data() {
             .from_utc_datetime(&utc_datetime.naive_utc());
 
         let result = spa::solar_position(
-            datetime, latitude, longitude, 0.0,    // elevation
-            0.0,    // deltaT
-            1000.0, // pressure
-            10.0,   // temperature
+            datetime,
+            latitude,
+            longitude,
+            0.0,                                                    // elevation
+            0.0,                                                    // deltaT
+            Some(RefractionCorrection::new(1000.0, 10.0).unwrap()), // atmospheric conditions
         );
 
         assert!(
@@ -110,12 +112,12 @@ fn test_modern_date_calculation() {
         .from_utc_datetime(&utc_datetime.naive_utc());
 
     let result = spa::solar_position(
-        datetime, 37.7749,   // San Francisco latitude
-        -122.4194, // San Francisco longitude
-        0.0,       // elevation
-        69.0,      // deltaT for 2023
-        1013.25,   // standard pressure
-        15.0,      // temperature
+        datetime,
+        37.7749,                                // San Francisco latitude
+        -122.4194,                              // San Francisco longitude
+        0.0,                                    // elevation
+        69.0,                                   // deltaT for 2023
+        Some(RefractionCorrection::standard()), // standard atmospheric conditions
     );
 
     assert!(

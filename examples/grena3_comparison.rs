@@ -1,7 +1,7 @@
 //! Compare SPA and Grena3 algorithms for speed vs accuracy trade-offs.
 
 use chrono::{DateTime, FixedOffset};
-use solar_positioning::{grena3, spa, time::DeltaT};
+use solar_positioning::{RefractionCorrection, grena3, spa, time::DeltaT};
 use std::time::Instant;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -15,8 +15,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // SPA calculation
     let start = Instant::now();
-    let spa_position =
-        spa::solar_position(datetime, latitude, longitude, 0.0, delta_t, 1013.25, 15.0)?;
+    let spa_position = spa::solar_position(
+        datetime,
+        latitude,
+        longitude,
+        0.0,
+        delta_t,
+        Some(RefractionCorrection::standard()),
+    )?;
     let spa_duration = start.elapsed();
 
     println!("SPA (High Accuracy):");
@@ -27,7 +33,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Grena3 calculation
     let start = Instant::now();
-    let grena3_position = grena3::solar_position(datetime, latitude, longitude, delta_t)?;
+    let grena3_position = grena3::solar_position(datetime, latitude, longitude, delta_t, None)?;
     let grena3_duration = start.elapsed();
 
     println!("Grena3 (Fast):");

@@ -42,7 +42,15 @@ fn test_combined_pattern_realistic_scenario() {
 
     for &time in &times {
         for &(lat, lon) in &coordinates {
-            let result = spa::solar_position(time, lat, lon, 100.0, 69.0, 1013.25, 15.0).unwrap();
+            let result = spa::solar_position(
+                time,
+                lat,
+                lon,
+                100.0,
+                69.0,
+                Some(solar_positioning::RefractionCorrection::new(1013.25, 15.0).unwrap()),
+            )
+            .unwrap();
             naive_results.push(result);
         }
     }
@@ -62,7 +70,13 @@ fn test_combined_pattern_realistic_scenario() {
         // Fast calculation for each coordinate using cached time parts
         for &(lat, lon) in &coordinates {
             let result = spa::spa_with_time_dependent_parts(
-                time, lat, lon, 100.0, 69.0, 1013.25, 15.0, time_parts,
+                time,
+                lat,
+                lon,
+                100.0,
+                69.0,
+                Some(solar_positioning::RefractionCorrection::new(1013.25, 15.0).unwrap()),
+                time_parts,
             )
             .unwrap();
             cached_results.push(result);
@@ -131,7 +145,13 @@ fn test_combined_pattern_varying_time_density() {
 
             for &(lat, lon) in &coordinates {
                 let _result = spa::spa_with_time_dependent_parts(
-                    time, lat, lon, 0.0, 69.0, 1013.25, 15.0, time_parts,
+                    time,
+                    lat,
+                    lon,
+                    0.0,
+                    69.0,
+                    Some(solar_positioning::RefractionCorrection::new(1013.25, 15.0).unwrap()),
+                    time_parts,
                 )
                 .unwrap();
                 result_count += 1;
@@ -174,8 +194,7 @@ fn test_combined_vs_pure_patterns() {
             lon,
             0.0,
             69.0,
-            1013.25,
-            15.0,
+            Some(solar_positioning::RefractionCorrection::new(1013.25, 15.0).unwrap()),
             &time_parts,
         )
         .unwrap();
@@ -198,7 +217,13 @@ fn test_combined_vs_pure_patterns() {
             .or_insert_with(|| spa::spa_time_dependent_parts(time, 69.0).unwrap());
         for &(lat, lon) in &coords_small {
             let _result = spa::spa_with_time_dependent_parts(
-                time, lat, lon, 0.0, 69.0, 1013.25, 15.0, time_parts,
+                time,
+                lat,
+                lon,
+                0.0,
+                69.0,
+                Some(solar_positioning::RefractionCorrection::new(1013.25, 15.0).unwrap()),
+                time_parts,
             )
             .unwrap();
         }

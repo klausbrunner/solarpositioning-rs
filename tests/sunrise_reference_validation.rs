@@ -2,7 +2,7 @@
 
 use chrono::{DateTime, FixedOffset, TimeZone, Timelike, Utc};
 use csv::ReaderBuilder;
-use solar_positioning::{spa, types::SunriseResult};
+use solar_positioning::{RefractionCorrection, spa, types::SunriseResult};
 use std::error::Error;
 use std::fs::File;
 
@@ -114,10 +114,9 @@ fn test_sunrise_sunset_debug_single_case() -> Result<(), Box<dyn Error>> {
                 test_datetime,
                 test_latitude,
                 test_longitude,
+                0.0, // elevation = 0
                 delta_t,
-                0.0,     // elevation = 0
-                1013.25, // pressure
-                15.0,    // temperature
+                Some(RefractionCorrection::standard()), // atmospheric conditions
             )?;
             println!(
                 "SPA Position at input time: Azimuth={:.3}°, Zenith={:.3}°",
@@ -130,10 +129,9 @@ fn test_sunrise_sunset_debug_single_case() -> Result<(), Box<dyn Error>> {
                 sunrise,
                 test_latitude,
                 test_longitude,
-                delta_t,
                 0.0,
-                1013.25,
-                15.0,
+                delta_t,
+                Some(RefractionCorrection::standard()),
             )?;
             println!(
                 "SPA Position at calculated sunrise: Azimuth={:.3}°, Elevation={:.3}°",
@@ -153,10 +151,9 @@ fn test_sunrise_sunset_debug_single_case() -> Result<(), Box<dyn Error>> {
                 expected_transit_time,
                 test_latitude,
                 test_longitude,
-                delta_t,
                 0.0,
-                1013.25,
-                15.0,
+                delta_t,
+                Some(RefractionCorrection::standard()),
             )?;
             println!(
                 "Expected transit time {} -> Azimuth={:.5}°, Zenith={:.5}°",
@@ -344,7 +341,14 @@ fn test_polar_transit_accuracy_svalbard() -> Result<(), Box<dyn Error>> {
             assert_eq!(transit.second(), 17);
 
             // Verify azimuth is very close to 180° at transit
-            let pos = spa::solar_position(transit, latitude, longitude, 0.0, 0.0, 1013.25, 15.0)?;
+            let pos = spa::solar_position(
+                transit,
+                latitude,
+                longitude,
+                0.0,
+                0.0,
+                Some(RefractionCorrection::standard()),
+            )?;
             let azimuth_error = (pos.azimuth() - 180.0).abs();
             assert!(
                 azimuth_error < 0.001,

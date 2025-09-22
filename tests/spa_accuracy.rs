@@ -2,7 +2,7 @@
 
 use chrono::{DateTime, FixedOffset, TimeZone, Utc};
 use csv::ReaderBuilder;
-use solar_positioning::spa;
+use solar_positioning::{RefractionCorrection, spa};
 use std::error::Error;
 use std::fs::File;
 
@@ -59,10 +59,9 @@ fn test_spa_accuracy_against_nrel_reference() -> Result<(), Box<dyn Error>> {
             datetime_fixed,
             *latitude,
             *longitude,
-            0.0,    // elevation (meters)
-            0.0,    // deltaT (seconds) - reference uses 0
-            1000.0, // pressure (millibars)
-            10.0,   // temperature (°C)
+            0.0,                                                    // elevation (meters)
+            0.0, // deltaT (seconds) - reference uses 0
+            Some(RefractionCorrection::new(1000.0, 10.0).unwrap()), // atmospheric conditions
         ) {
             Ok(position) => {
                 let azimuth_error = (position.azimuth() - expected_azimuth).abs();
@@ -140,12 +139,12 @@ fn test_spa_specific_cases() {
         .unwrap()
         .from_utc_datetime(&utc_datetime.naive_utc());
     let result = spa::solar_position(
-        datetime, 0.0,     // Greenwich latitude
-        0.0,     // Greenwich longitude
-        0.0,     // sea level
-        63.86,   // deltaT for year 2000 (from DeltaT estimation)
-        1013.25, // standard pressure
-        15.0,    // 15°C temperature
+        datetime,
+        0.0,                                    // Greenwich latitude
+        0.0,                                    // Greenwich longitude
+        0.0,                                    // sea level
+        63.86,                                  // deltaT for year 2000 (from DeltaT estimation)
+        Some(RefractionCorrection::standard()), // standard atmospheric conditions
     );
 
     assert!(result.is_ok());

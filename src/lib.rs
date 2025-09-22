@@ -17,7 +17,7 @@
 //! ## Quick Start
 //!
 //! ```rust
-//! use solar_positioning::{spa, time::JulianDate, types::SolarPosition};
+//! use solar_positioning::{spa, time::JulianDate, types::SolarPosition, RefractionCorrection};
 //! use chrono::{DateTime, FixedOffset, Utc, TimeZone};
 //!
 //! // Example with time calculations
@@ -30,7 +30,8 @@
 //! let datetime_utc = Utc.with_ymd_and_hms(2023, 6, 21, 19, 0, 0).unwrap(); // Same moment
 //!
 //! // Both calls produce identical results
-//! let position = spa::solar_position(datetime_fixed, 37.7749, -122.4194, 0.0, 69.0, 1013.25, 15.0).unwrap();
+//! let position = spa::solar_position(datetime_fixed, 37.7749, -122.4194, 0.0, 69.0,
+//!     Some(RefractionCorrection::standard())).unwrap();
 //! println!("Azimuth: {:.3}°", position.azimuth());
 //! println!("Elevation: {:.3}°", position.elevation_angle());
 //! ```
@@ -78,7 +79,8 @@
 
 // Public API exports
 pub use crate::error::{Error, Result};
-pub use crate::types::{Horizon, SolarPosition, SunriseResult};
+pub use crate::spa::{SpaTimeDependent, spa_time_dependent_parts, spa_with_time_dependent_parts};
+pub use crate::types::{Horizon, RefractionCorrection, SolarPosition, SunriseResult};
 
 // Algorithm modules
 pub mod grena3;
@@ -108,12 +110,24 @@ mod tests {
             .unwrap();
         let datetime_utc = Utc.with_ymd_and_hms(2023, 6, 21, 19, 0, 0).unwrap();
 
-        let position1 =
-            spa::solar_position(datetime_fixed, 37.7749, -122.4194, 0.0, 69.0, 1013.25, 15.0)
-                .unwrap();
-        let position2 =
-            spa::solar_position(datetime_utc, 37.7749, -122.4194, 0.0, 69.0, 1013.25, 15.0)
-                .unwrap();
+        let position1 = spa::solar_position(
+            datetime_fixed,
+            37.7749,
+            -122.4194,
+            0.0,
+            69.0,
+            Some(RefractionCorrection::standard()),
+        )
+        .unwrap();
+        let position2 = spa::solar_position(
+            datetime_utc,
+            37.7749,
+            -122.4194,
+            0.0,
+            69.0,
+            Some(RefractionCorrection::standard()),
+        )
+        .unwrap();
 
         // Both should produce identical results
         assert!((position1.azimuth() - position2.azimuth()).abs() < 1e-10);
@@ -134,23 +148,21 @@ mod tests {
             .unwrap();
         let datetime_utc = Utc.with_ymd_and_hms(2023, 6, 21, 19, 0, 0).unwrap();
 
-        let position1 = grena3::solar_position_with_refraction(
+        let position1 = grena3::solar_position(
             datetime_fixed,
             37.7749,
             -122.4194,
             69.0,
-            Some(1013.25),
-            Some(15.0),
+            Some(RefractionCorrection::new(1013.25, 15.0).unwrap()),
         )
         .unwrap();
 
-        let position2 = grena3::solar_position_with_refraction(
+        let position2 = grena3::solar_position(
             datetime_utc,
             37.7749,
             -122.4194,
             69.0,
-            Some(1013.25),
-            Some(15.0),
+            Some(RefractionCorrection::new(1013.25, 15.0).unwrap()),
         )
         .unwrap();
 

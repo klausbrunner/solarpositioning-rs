@@ -7,7 +7,7 @@
 
 /// Earth heliocentric longitude periodic terms (`TERMS_L`).
 ///
-/// Multi-dimensional array structure: [`power_of_jme`][term][A, B, C]
+/// Multi-dimensional array structure: \[`power_of_jme`\]\[`coefficient_index`\]\[A, B, C\]
 /// where each term represents A * cos(B + C * JME)
 pub const TERMS_L: &[&[&[f64; 3]]] = &[
     // L0 terms (JME^0)

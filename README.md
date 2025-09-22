@@ -25,7 +25,7 @@ To get refraction-corrected topocentric coordinates:
 
 ```rust
 use chrono::{DateTime, FixedOffset};
-use solar_positioning::{spa, time::DeltaT};
+use solar_positioning::{spa, time::DeltaT, RefractionCorrection};
 
 // Use timezone-aware datetime (Vienna, Central European Time)
 let datetime = "2025-06-21T12:00:00+02:00".parse::<DateTime<FixedOffset>>().unwrap();
@@ -37,11 +37,35 @@ let position = spa::solar_position(
     16.37,   // longitude (degrees)
     190.0,   // elevation (m)
     DeltaT::estimate_from_date_like(&datetime).unwrap(), // delta T (s, ~70s for 2025)
-    1010.0,  // avg. air pressure (hPa)
-    11.0     // avg. air temperature (°C)
+    Some(RefractionCorrection::new(1010.0, 11.0).unwrap()) // atmospheric conditions
 ).unwrap();
 
 println!("{:?}", position);
+```
+
+For better performance when calculating positions for many coordinates at the same time, you can use the split functions to avoid recalculating time-dependent values:
+
+```rust
+use chrono::{DateTime, FixedOffset};
+use solar_positioning::{spa, time::DeltaT, RefractionCorrection};
+
+let datetime = "2025-06-21T12:00:00+02:00".parse::<DateTime<FixedOffset>>().unwrap();
+let delta_t = DeltaT::estimate_from_date_like(&datetime).unwrap();
+
+// Calculate time-dependent parts once
+let time_dependent = spa::spa_time_dependent_parts(datetime, delta_t).unwrap();
+
+// Use for multiple coordinates efficiently
+for lat in 45..=50 {
+    for lon in 10..=20 {
+        let position = spa::spa_with_time_dependent_parts(
+            datetime, lat as f64, lon as f64, 0.0, delta_t,
+            Some(RefractionCorrection::standard()),
+            &time_dependent
+        ).unwrap();
+        // Process position...
+    }
+}
 ```
 
 The spa module includes functions to calculate the times of sunrise, sun transit, and sunset in one fell swoop. The actual return type depends on the type of day (regular day, polar day, polar night).

@@ -1,6 +1,6 @@
 //! Core data types for solar positioning calculations.
 
-use crate::error::{check_azimuth, check_zenith_angle};
+use crate::error::{check_azimuth, check_pressure, check_temperature, check_zenith_angle};
 use crate::{Error, Result};
 
 /// Predefined elevation angles for sunrise/sunset calculations.
@@ -72,6 +72,107 @@ impl std::hash::Hash for Horizon {
                 angle.to_bits().hash(state);
             }
         }
+    }
+}
+
+/// Atmospheric conditions for refraction correction in solar position calculations.
+///
+/// When calculating solar positions, atmospheric refraction bends light rays,
+/// causing the apparent position of the sun to differ from its true geometric position.
+/// This is most noticeable near the horizon where refraction can shift the apparent
+/// position by up to ~0.6 degrees.
+///
+/// # Example
+/// ```
+/// # use solar_positioning::types::RefractionCorrection;
+/// // Standard atmospheric conditions at sea level
+/// let standard = RefractionCorrection::standard();
+/// assert_eq!(standard.pressure(), 1013.25);
+/// assert_eq!(standard.temperature(), 15.0);
+///
+/// // Custom conditions for high altitude or different climate
+/// let custom = RefractionCorrection::new(900.0, -5.0).unwrap();
+/// assert_eq!(custom.pressure(), 900.0);
+/// assert_eq!(custom.temperature(), -5.0);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct RefractionCorrection {
+    /// Atmospheric pressure in millibars (hPa)
+    pressure: f64,
+    /// Temperature in degrees Celsius
+    temperature: f64,
+}
+
+impl RefractionCorrection {
+    /// Creates a new refraction correction with the specified atmospheric conditions.
+    ///
+    /// # Arguments
+    /// * `pressure` - Atmospheric pressure in millibars (1 to 2000 hPa)
+    /// * `temperature` - Temperature in degrees Celsius (-273.15 to 100°C)
+    ///
+    /// # Returns
+    /// Refraction correction or error if parameters are invalid
+    ///
+    /// # Errors
+    /// Returns `InvalidPressure` or `InvalidTemperature` for out-of-range values.
+    ///
+    /// # Example
+    /// ```
+    /// # use solar_positioning::types::RefractionCorrection;
+    /// let correction = RefractionCorrection::new(1013.25, 15.0).unwrap();
+    /// assert_eq!(correction.pressure(), 1013.25);
+    /// assert_eq!(correction.temperature(), 15.0);
+    /// ```
+    pub fn new(pressure: f64, temperature: f64) -> Result<Self> {
+        check_pressure(pressure)?;
+        check_temperature(temperature)?;
+        Ok(Self {
+            pressure,
+            temperature,
+        })
+    }
+
+    /// Creates refraction correction using standard atmospheric conditions.
+    ///
+    /// Uses standard sea-level conditions:
+    /// - Pressure: 1013.25 millibars (standard atmosphere)
+    /// - Temperature: 15.0°C (59°F)
+    ///
+    /// # Returns
+    /// Refraction correction with standard atmospheric conditions
+    ///
+    /// # Example
+    /// ```
+    /// # use solar_positioning::types::RefractionCorrection;
+    /// let standard = RefractionCorrection::standard();
+    /// assert_eq!(standard.pressure(), 1013.25);
+    /// assert_eq!(standard.temperature(), 15.0);
+    /// ```
+    #[must_use]
+    pub const fn standard() -> Self {
+        Self {
+            pressure: 1013.25,
+            temperature: 15.0,
+        }
+    }
+
+    /// Gets the atmospheric pressure in millibars.
+    ///
+    /// # Returns
+    /// Pressure in millibars (hPa)
+    #[must_use]
+    pub const fn pressure(&self) -> f64 {
+        self.pressure
+    }
+
+    /// Gets the temperature in degrees Celsius.
+    ///
+    /// # Returns
+    /// Temperature in degrees Celsius
+    #[must_use]
+    pub const fn temperature(&self) -> f64 {
+        self.temperature
     }
 }
 
@@ -362,5 +463,24 @@ mod tests {
         assert_eq!(result.transit(), &transit);
         assert_eq!(result.sunrise(), None);
         assert_eq!(result.sunset(), None);
+    }
+
+    #[test]
+    fn test_refraction_correction() {
+        // Test standard conditions
+        let standard = RefractionCorrection::standard();
+        assert_eq!(standard.pressure(), 1013.25);
+        assert_eq!(standard.temperature(), 15.0);
+
+        // Test custom conditions
+        let custom = RefractionCorrection::new(1000.0, 20.0).unwrap();
+        assert_eq!(custom.pressure(), 1000.0);
+        assert_eq!(custom.temperature(), 20.0);
+
+        // Test validation
+        assert!(RefractionCorrection::new(-1.0, 15.0).is_err()); // Invalid pressure
+        assert!(RefractionCorrection::new(1013.25, -300.0).is_err()); // Invalid temperature
+        assert!(RefractionCorrection::new(3000.0, 15.0).is_err()); // Too high pressure
+        assert!(RefractionCorrection::new(1013.25, 150.0).is_err()); // Too high temperature
     }
 }

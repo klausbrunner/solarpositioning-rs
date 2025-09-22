@@ -7,13 +7,13 @@
 #![allow(clippy::many_single_char_names)]
 #![allow(clippy::unreadable_literal)]
 
-use crate::error::{check_coordinates, check_refraction_params_usable};
+use crate::error::check_coordinates;
 use crate::math::{
     acos, asin, atan, atan2, cos, degrees_to_radians, floor, normalize_degrees_0_to_360,
     polynomial, radians_to_degrees, sin, tan,
 };
 use crate::time::JulianDate;
-use crate::{Error, Horizon, Result, SolarPosition};
+use crate::{Error, Horizon, RefractionCorrection, Result, SolarPosition};
 use chrono::{DateTime, TimeZone};
 
 pub mod coefficients;
@@ -44,8 +44,7 @@ const SECONDS_PER_HOUR: f64 = 3600.0;
 /// * `longitude` - Observer longitude in degrees (-180 to +180)
 /// * `elevation` - Observer elevation in meters above sea level
 /// * `delta_t` - ΔT in seconds (difference between TT and UT1)
-/// * `pressure` - Atmospheric pressure in millibars (for refraction correction)
-/// * `temperature` - Temperature in °C (for refraction correction)
+/// * `refraction` - Optional atmospheric refraction correction
 ///
 /// # Returns
 /// Solar position or error
@@ -55,18 +54,29 @@ const SECONDS_PER_HOUR: f64 = 3600.0;
 ///
 /// # Example
 /// ```rust
-/// use solar_positioning::spa;
+/// use solar_positioning::{spa, RefractionCorrection};
 /// use chrono::{DateTime, FixedOffset};
 ///
 /// let datetime = "2023-06-21T12:00:00-07:00".parse::<DateTime<FixedOffset>>().unwrap();
+///
+/// // With atmospheric refraction correction
 /// let position = spa::solar_position(
 ///     datetime,
 ///     37.7749,     // San Francisco latitude
 ///     -122.4194,   // San Francisco longitude
 ///     0.0,         // elevation (meters)
 ///     69.0,        // deltaT (seconds)
-///     1013.25,     // pressure (millibars)
-///     15.0         // temperature (°C)
+///     Some(RefractionCorrection::standard()),
+/// ).unwrap();
+///
+/// // Without refraction correction
+/// let position_no_refraction = spa::solar_position(
+///     datetime,
+///     37.7749,
+///     -122.4194,
+///     0.0,
+///     69.0,
+///     None,
 /// ).unwrap();
 ///
 /// println!("Azimuth: {:.3}°", position.azimuth());
@@ -79,126 +89,23 @@ pub fn solar_position<Tz: TimeZone>(
     longitude: f64,
     elevation: f64,
     delta_t: f64,
-    pressure: f64,
-    temperature: f64,
+    refraction: Option<RefractionCorrection>,
 ) -> Result<SolarPosition> {
-    check_coordinates(latitude, longitude)?;
-
-    // Convert datetime to Julian date components
-    let jd = JulianDate::from_datetime(&datetime, delta_t)?;
-
-    let jme = jd.julian_ephemeris_millennium();
-    let jce = jd.julian_ephemeris_century();
-
-    // Step 1: Calculate Earth heliocentric longitude, L
-    let l_terms = calculate_lbr_terms(jme, TERMS_L);
-    let l_degrees =
-        normalize_degrees_0_to_360(radians_to_degrees(calculate_lbr_polynomial(jme, &l_terms)));
-
-    // Step 2: Calculate Earth heliocentric latitude, B
-    let b_terms = calculate_lbr_terms(jme, TERMS_B);
-    let b_degrees =
-        normalize_degrees_0_to_360(radians_to_degrees(calculate_lbr_polynomial(jme, &b_terms)));
-
-    // Step 3: Calculate Earth radius vector, R
-    let r_terms = calculate_lbr_terms(jme, TERMS_R);
-    let r = calculate_lbr_polynomial(jme, &r_terms);
-
-    if r == 0.0 {
-        return Err(Error::computation_error("Earth radius vector is zero"));
-    }
-
-    // Step 4: Calculate geocentric longitude and latitude
-    let theta_degrees = normalize_degrees_0_to_360(l_degrees + 180.0);
-    let beta_degrees = -b_degrees;
-    let beta = degrees_to_radians(beta_degrees);
-
-    // Step 5: Calculate nutation
-    let x_terms = calculate_nutation_terms(jce);
-    let delta_psi_epsilon = calculate_delta_psi_epsilon(jce, &x_terms);
-
-    // Step 6: Calculate true obliquity of the ecliptic
-    let epsilon_degrees =
-        calculate_true_obliquity_of_ecliptic(&jd, delta_psi_epsilon.delta_epsilon);
-    let epsilon = degrees_to_radians(epsilon_degrees);
-
-    // Step 7: Calculate aberration correction
-    let delta_tau = ABERRATION_CONSTANT / (SECONDS_PER_HOUR * r);
-
-    // Step 8: Calculate apparent sun longitude
-    let lambda_degrees = theta_degrees + delta_psi_epsilon.delta_psi + delta_tau;
-    let lambda = degrees_to_radians(lambda_degrees);
-
-    // Step 9: Calculate apparent sidereal time at Greenwich
-    let nu_degrees = calculate_apparent_sidereal_time_at_greenwich(
-        &jd,
-        delta_psi_epsilon.delta_psi,
-        epsilon_degrees,
-    );
-
-    // Step 10: Calculate geocentric sun right ascension
-    let alpha_degrees = calculate_geocentric_sun_right_ascension(beta, epsilon, lambda);
-
-    // Step 11: Calculate geocentric sun declination
-    let delta_degrees =
-        radians_to_degrees(calculate_geocentric_sun_declination(beta, epsilon, lambda));
-
-    // Step 12: Calculate observer local hour angle
-    let h_degrees = normalize_degrees_0_to_360(nu_degrees + longitude - alpha_degrees);
-    let h = degrees_to_radians(h_degrees);
-
-    // Step 13: Calculate topocentric sun right ascension and declination
-    let xi_degrees = 8.794 / (3600.0 * r);
-    let xi = degrees_to_radians(xi_degrees);
-    let phi = degrees_to_radians(latitude);
-    let delta = degrees_to_radians(delta_degrees);
-
-    let u = atan(EARTH_FLATTENING_FACTOR * tan(phi));
-    let x = cos(u) + elevation * cos(phi) / EARTH_RADIUS_METERS;
-    let y = EARTH_FLATTENING_FACTOR.mul_add(sin(u), (elevation * sin(phi)) / EARTH_RADIUS_METERS);
-
-    let x1 = (x * sin(xi)).mul_add(-cos(h), cos(delta));
-    let delta_alpha_degrees = radians_to_degrees(atan2(-x * sin(xi) * sin(h), x1));
-    let delta_prime = atan2(
-        y.mul_add(-sin(xi), sin(delta)) * cos(degrees_to_radians(delta_alpha_degrees)),
-        x1,
-    );
-
-    // Step 14: Calculate topocentric local hour angle
-    let h_prime_degrees = h_degrees - delta_alpha_degrees;
-    let h_prime = degrees_to_radians(h_prime_degrees);
-
-    // Step 15: Calculate topocentric solar position
-    calculate_topocentric_solar_position(pressure, temperature, phi, delta_prime, h_prime)
-}
-
-/// Calculate solar position using the SPA algorithm without refraction correction.
-///
-/// This is identical to the main function but doesn't apply atmospheric refraction correction.
-///
-/// # Errors
-/// Returns error for invalid coordinates (latitude outside ±90°, longitude outside ±180°)
-pub fn solar_position_no_refraction<Tz: TimeZone>(
-    datetime: DateTime<Tz>,
-    latitude: f64,
-    longitude: f64,
-    elevation: f64,
-    delta_t: f64,
-) -> Result<SolarPosition> {
-    solar_position(
+    // Convenience wrapper that calls the split functions in sequence
+    let time_dependent = spa_time_dependent_parts(datetime.clone(), delta_t)?;
+    spa_with_time_dependent_parts(
         datetime,
         latitude,
         longitude,
         elevation,
         delta_t,
-        f64::NAN,
-        f64::NAN,
+        refraction,
+        &time_dependent,
     )
 }
 
 /// Represents nutation corrections for longitude and obliquity.
 /// Time-dependent intermediate values from SPA calculation (steps 1-11).
-#[cfg(feature = "unstable")]
 #[derive(Debug, Clone)]
 pub struct SpaTimeDependent {
     /// Geocentric longitude (degrees)
@@ -327,54 +234,6 @@ fn calculate_geocentric_sun_declination(beta_rad: f64, epsilon_rad: f64, lambda_
     ))
 }
 
-/// Calculate topocentric solar position with optional refraction correction.
-fn calculate_topocentric_solar_position(
-    pressure: f64,
-    temperature: f64,
-    phi: f64,
-    delta_prime: f64,
-    h_prime: f64,
-) -> Result<SolarPosition> {
-    // Calculate topocentric zenith angle
-    let sin_phi = sin(phi);
-    let cos_phi = cos(phi);
-    let cos_h_prime = cos(h_prime);
-
-    let e_zero = asin(sin_phi.mul_add(sin(delta_prime), cos_phi * cos(delta_prime) * cos_h_prime));
-    let topocentric_zenith_angle =
-        calculate_topocentric_zenith_angle(pressure, temperature, e_zero);
-
-    // Calculate topocentric azimuth angle
-    let gamma = atan2(
-        sin(h_prime),
-        cos_h_prime.mul_add(sin_phi, -(tan(delta_prime) * cos_phi)),
-    );
-    let gamma_degrees = normalize_degrees_0_to_360(radians_to_degrees(gamma));
-    let topocentric_azimuth_angle = normalize_degrees_0_to_360(gamma_degrees + 180.0);
-
-    SolarPosition::new(topocentric_azimuth_angle, topocentric_zenith_angle)
-}
-
-/// Calculate topocentric zenith angle with optional refraction correction.
-fn calculate_topocentric_zenith_angle(pressure: f64, temperature: f64, e_zero: f64) -> f64 {
-    let e_zero_degrees = radians_to_degrees(e_zero);
-
-    // Apply refraction correction if parameters are usable and sun is visible
-    let do_correct = check_refraction_params_usable(pressure, temperature)
-        && e_zero_degrees > SUNRISE_SUNSET_ANGLE;
-
-    if do_correct {
-        90.0 - e_zero_degrees
-            - (pressure / 1010.0) * (283.0 / (273.0 + temperature)) * 1.02
-                / (60.0
-                    * tan(degrees_to_radians(
-                        e_zero_degrees + 10.3 / (e_zero_degrees + 5.11),
-                    )))
-    } else {
-        90.0 - e_zero_degrees
-    }
-}
-
 /// Calculate sunrise, solar transit, and sunset times using the SPA algorithm.
 ///
 /// This follows the NREL SPA algorithm (Reda & Andreas 2003) for calculating
@@ -428,7 +287,7 @@ pub fn sunrise_sunset<Tz: TimeZone>(
         .from_local_datetime(&date.date_naive().and_hms_opt(0, 0, 0).unwrap())
         .unwrap();
 
-    // Implement the complete Java algorithm in one place for accuracy
+    // Implement the complete algorithm in one place for accuracy
     calculate_sunrise_sunset_spa_algorithm(day_start, latitude, longitude, delta_t, elevation_angle)
 }
 
@@ -456,7 +315,7 @@ fn calculate_sunrise_sunset_spa_algorithm<Tz: TimeZone>(
     // Calculate initial transit time and check for polar conditions
     let m0 = (alpha_deltas[1].alpha - longitude - nu_degrees) / 360.0;
 
-    // Check for polar conditions but don't return early - we need to calculate accurate transit
+    // Check for polar conditions but don't return early - need to calculate accurate transit
     let polar_type = check_polar_conditions_type(latitude, elevation_angle, alpha_deltas[1].delta);
 
     // Calculate approximate times and apply corrections (needed for accurate transit time)
@@ -534,7 +393,7 @@ fn calculate_alpha_deltas_for_three_days<Tz: TimeZone>(
     Ok(alpha_deltas)
 }
 
-/// Check for polar day/night conditions and return early if they apply
+/// Check for polar day/night conditions
 fn check_polar_conditions<Tz: TimeZone>(
     day: DateTime<Tz>,
     m0: f64,
@@ -629,7 +488,7 @@ fn calculate_final_times<Tz: TimeZone>(
         *n_item = params.m_values[i] + params.delta_t / 86400.0;
     }
 
-    // A.2.10. Calculate α'i and δ'i using quadratic interpolation
+    // A.2.10. Calculate α'i and δ'i using interpolation
     let alpha_delta_primes = calculate_interpolated_alpha_deltas(&params.alpha_deltas, &n);
 
     // A.2.11. Calculate local hour angles
@@ -676,7 +535,7 @@ fn calculate_final_times<Tz: TimeZone>(
     }
 }
 
-/// A.2.10. Calculate interpolated alpha/delta values using quadratic interpolation
+/// A.2.10. Calculate interpolated alpha/delta values
 fn calculate_interpolated_alpha_deltas(
     alpha_deltas: &[AlphaDelta; 3],
     n: &[f64; 3],
@@ -773,40 +632,41 @@ pub fn sunrise_sunset_for_horizon<Tz: TimeZone>(
 }
 
 /// Calculate alpha (right ascension) and delta (declination) for a given JME using full SPA algorithm
+/// Following NREL SPA Algorithm Section 3.2-3.8 for sunrise/sunset calculations
 fn calculate_alpha_delta(jme: f64, delta_psi: f64, epsilon_degrees: f64) -> AlphaDelta {
     // Follow Java calculateAlphaDelta exactly
 
-    // calculate Earth heliocentric latitude, B
+    // 3.2.3. Calculate Earth heliocentric latitude, B
     let b_terms = calculate_lbr_terms(jme, TERMS_B);
     let b_degrees =
         normalize_degrees_0_to_360(radians_to_degrees(calculate_lbr_polynomial(jme, &b_terms)));
 
-    // calculate Earth radius vector, R
+    // 3.2.4. Calculate Earth radius vector, R
     let r_terms = calculate_lbr_terms(jme, TERMS_R);
     let r = calculate_lbr_polynomial(jme, &r_terms);
     assert!(r != 0.0);
 
-    // calculate Earth heliocentric longitude, L
+    // 3.2.2. Calculate Earth heliocentric longitude, L
     let l_terms = calculate_lbr_terms(jme, TERMS_L);
     let l_degrees =
         normalize_degrees_0_to_360(radians_to_degrees(calculate_lbr_polynomial(jme, &l_terms)));
 
-    // calculate geocentric longitude, theta
+    // 3.2.5. Calculate geocentric longitude, theta
     let theta_degrees = normalize_degrees_0_to_360(l_degrees + 180.0);
 
-    // calculate geocentric latitude, beta
+    // 3.2.6. Calculate geocentric latitude, beta
     let beta_degrees = -b_degrees;
     let beta = degrees_to_radians(beta_degrees);
     let epsilon = degrees_to_radians(epsilon_degrees);
 
-    // calculate aberration correction
+    // 3.5. Calculate aberration correction
     let delta_tau = ABERRATION_CONSTANT / (SECONDS_PER_HOUR * r);
 
-    // calculate the apparent sun longitude
+    // 3.6. Calculate the apparent sun longitude
     let lambda_degrees = theta_degrees + delta_psi + delta_tau;
     let lambda = degrees_to_radians(lambda_degrees);
 
-    // Calculate the geocentric sun right ascension and declination (like Java)
+    // 3.8.1-3.8.2. Calculate the geocentric sun right ascension and declination
     let alpha_degrees = calculate_geocentric_sun_right_ascension(beta, epsilon, lambda);
     let delta_degrees =
         radians_to_degrees(calculate_geocentric_sun_declination(beta, epsilon, lambda));
@@ -958,7 +818,6 @@ where
     })
 }
 
-/// Internal helper that uses precomputed values for efficiency
 #[allow(clippy::needless_pass_by_value)]
 fn calculate_sunrise_sunset_spa_algorithm_with_precomputed<Tz: TimeZone>(
     day: DateTime<Tz>,
@@ -1004,6 +863,228 @@ fn calculate_sunrise_sunset_spa_algorithm_with_precomputed<Tz: TimeZone>(
     })
 }
 
+/// Extract expensive time-dependent parts of SPA calculation (steps 1-11).
+///
+/// This function calculates the expensive astronomical quantities that are independent
+/// of observer location. Typically used for coordinate sweeps (many locations at fixed
+/// time).
+///
+/// # Performance
+///
+/// Use this with [`spa_with_time_dependent_parts`] for coordinate sweeps:
+/// ```rust
+/// use solar_positioning::spa;
+/// use chrono::{DateTime, Utc};
+///
+/// let datetime = "2023-06-21T12:00:00Z".parse::<DateTime<Utc>>().unwrap();
+/// let shared_parts = spa::spa_time_dependent_parts(datetime, 69.0)?;
+///
+/// for lat in -60..=60 {
+///     for lon in -180..=179 {
+///         let pos = spa::spa_with_time_dependent_parts(
+///             datetime, lat as f64, lon as f64, 0.0, 69.0, None,
+///             &shared_parts
+///         )?;
+///     }
+/// }
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+///
+/// # Errors
+/// Returns error if Julian date calculation fails for the provided datetime
+#[allow(clippy::needless_pass_by_value)]
+pub fn spa_time_dependent_parts<Tz: TimeZone>(
+    datetime: DateTime<Tz>,
+    delta_t: f64,
+) -> Result<SpaTimeDependent> {
+    use crate::time::JulianDate;
+
+    // Convert to UTC for calculations
+    let utc_datetime = datetime.with_timezone(&chrono::Utc);
+    let jd = JulianDate::from_datetime(&utc_datetime, delta_t)?;
+    let jme = jd.julian_ephemeris_millennium();
+    let jce = jd.julian_ephemeris_century();
+
+    // 3.2.2. Calculate the Earth heliocentric longitude, L (in degrees)
+    let l_terms = calculate_lbr_terms(jme, TERMS_L);
+    let l_degrees =
+        normalize_degrees_0_to_360(radians_to_degrees(calculate_lbr_polynomial(jme, &l_terms)));
+
+    // 3.2.3. Calculate the Earth heliocentric latitude, B (in degrees)
+    let b_terms = calculate_lbr_terms(jme, TERMS_B);
+    let b_degrees =
+        normalize_degrees_0_to_360(radians_to_degrees(calculate_lbr_polynomial(jme, &b_terms)));
+
+    // 3.2.4. Calculate the Earth radius vector, R (in Astronomical Units, AU)
+    let r_terms = calculate_lbr_terms(jme, TERMS_R);
+    let r = calculate_lbr_polynomial(jme, &r_terms);
+
+    if r == 0.0 {
+        return Err(Error::computation_error("Earth radius vector is zero"));
+    }
+
+    // 3.2.5. Calculate the geocentric longitude, theta (in degrees)
+    let theta_degrees = normalize_degrees_0_to_360(l_degrees + 180.0);
+    // 3.2.6. Calculate the geocentric latitude, beta (in degrees)
+    let beta_degrees = -b_degrees;
+
+    // 3.3. Calculate the nutation in longitude and obliquity
+    let x_terms = calculate_nutation_terms(jce);
+    let delta_psi_epsilon = calculate_delta_psi_epsilon(jce, &x_terms);
+
+    // 3.4. Calculate the true obliquity of the ecliptic, epsilon (in degrees)
+    let epsilon_degrees =
+        calculate_true_obliquity_of_ecliptic(&jd, delta_psi_epsilon.delta_epsilon);
+
+    // 3.5. Calculate the aberration correction, delta_tau (in degrees)
+    let delta_tau = ABERRATION_CONSTANT / (SECONDS_PER_HOUR * r);
+
+    // 3.6. Calculate the apparent sun longitude, lambda (in degrees)
+    let lambda_degrees = theta_degrees + delta_psi_epsilon.delta_psi + delta_tau;
+
+    // 3.7. Calculate the apparent sidereal time at Greenwich at any given time, nu (in degrees)
+    let nu_degrees = calculate_apparent_sidereal_time_at_greenwich(
+        &jd,
+        delta_psi_epsilon.delta_psi,
+        epsilon_degrees,
+    );
+
+    // 3.8.1. Calculate the geocentric sun right ascension, alpha (in degrees)
+    let beta = degrees_to_radians(beta_degrees);
+    let epsilon = degrees_to_radians(epsilon_degrees);
+    let lambda = degrees_to_radians(lambda_degrees);
+    let alpha_degrees = calculate_geocentric_sun_right_ascension(beta, epsilon, lambda);
+
+    // 3.8.2. Calculate the geocentric sun declination, delta (in degrees)
+    let delta_degrees =
+        radians_to_degrees(calculate_geocentric_sun_declination(beta, epsilon, lambda));
+
+    Ok(SpaTimeDependent {
+        theta_degrees,
+        beta_degrees,
+        r,
+        delta_psi: delta_psi_epsilon.delta_psi,
+        epsilon_degrees,
+        lambda_degrees,
+        nu_degrees,
+        alpha_degrees,
+        delta_degrees,
+    })
+}
+
+/// Complete SPA calculation using pre-computed time-dependent parts (steps 12+).
+///
+/// This function completes the SPA calculation using cached intermediate values
+/// from [`spa_time_dependent_parts`]. Used together, these provide significant
+/// speedup for coordinate sweeps with unchanged accuracy.
+///
+/// # Parameters
+///
+/// * `datetime` - The date and time (must match the datetime used for `time_dependent`)
+/// * `latitude` - Observer latitude in decimal degrees [-90, 90]
+/// * `longitude` - Observer longitude in decimal degrees [-180, 180]
+/// * `elevation` - Observer elevation above sea level in meters
+/// * `delta_t` - Difference between Earth rotation time and terrestrial time in seconds (must match `time_dependent`)
+/// * `refraction` - Optional atmospheric refraction correction
+/// * `time_dependent` - Pre-computed time-dependent calculations from [`spa_time_dependent_parts`]
+///
+/// # Errors
+/// Returns error for invalid coordinates (latitude outside ±90°, longitude outside ±180°)
+/// or if Julian date calculation fails
+#[allow(clippy::needless_pass_by_value)]
+pub fn spa_with_time_dependent_parts<Tz: TimeZone>(
+    datetime: DateTime<Tz>,
+    latitude: f64,
+    longitude: f64,
+    elevation: f64,
+    delta_t: f64,
+    refraction: Option<RefractionCorrection>,
+    time_dependent: &SpaTimeDependent,
+) -> Result<SolarPosition> {
+    check_coordinates(latitude, longitude)?;
+
+    // 3.9. Calculate the observer local hour angle, H (in degrees)
+    // nu_degrees needs to be calculated precisely for each timestamp
+    let jd = JulianDate::from_datetime(&datetime, delta_t)?; // Get precise Julian date
+    let nu_degrees = calculate_apparent_sidereal_time_at_greenwich(
+        &jd,
+        time_dependent.delta_psi,
+        time_dependent.epsilon_degrees,
+    );
+
+    // Calculate geocentric sun right ascension and declination
+    let beta = degrees_to_radians(time_dependent.beta_degrees);
+    let epsilon = degrees_to_radians(time_dependent.epsilon_degrees);
+    let lambda = degrees_to_radians(time_dependent.lambda_degrees);
+    let alpha_degrees = calculate_geocentric_sun_right_ascension(beta, epsilon, lambda);
+    let delta_degrees =
+        radians_to_degrees(calculate_geocentric_sun_declination(beta, epsilon, lambda));
+
+    let h_degrees = normalize_degrees_0_to_360(nu_degrees + longitude - alpha_degrees);
+    let h = degrees_to_radians(h_degrees);
+
+    // 3.10-3.11. Calculate the topocentric sun coordinates
+    let xi_degrees = 8.794 / (3600.0 * time_dependent.r);
+    let xi = degrees_to_radians(xi_degrees);
+    let phi = degrees_to_radians(latitude);
+    let delta = degrees_to_radians(delta_degrees);
+
+    let u = atan(EARTH_FLATTENING_FACTOR * tan(phi));
+    let y = EARTH_FLATTENING_FACTOR.mul_add(sin(u), (elevation / EARTH_RADIUS_METERS) * sin(phi));
+    let x = (elevation / EARTH_RADIUS_METERS).mul_add(cos(phi), cos(u));
+
+    let delta_alpha_prime_degrees = radians_to_degrees(atan2(
+        -x * sin(xi) * sin(h),
+        (x * sin(xi)).mul_add(-cos(h), cos(delta)),
+    ));
+
+    let delta_prime = radians_to_degrees(atan2(
+        y.mul_add(-sin(xi), sin(delta)) * cos(degrees_to_radians(delta_alpha_prime_degrees)),
+        (x * sin(xi)).mul_add(-cos(h), cos(delta)),
+    ));
+
+    // 3.12. Calculate the topocentric local hour angle, H' (in degrees)
+    let h_prime_degrees = h_degrees - delta_alpha_prime_degrees;
+
+    // 3.13. Calculate the topocentric zenith and azimuth angles
+    let zenith_angle = radians_to_degrees(acos(sin(degrees_to_radians(latitude)).mul_add(
+        sin(degrees_to_radians(delta_prime)),
+        cos(degrees_to_radians(latitude))
+            * cos(degrees_to_radians(delta_prime))
+            * cos(degrees_to_radians(h_prime_degrees)),
+    )));
+
+    // 3.14. Calculate the topocentric azimuth angle
+    let azimuth = normalize_degrees_0_to_360(
+        180.0
+            + radians_to_degrees(atan2(
+                sin(degrees_to_radians(h_prime_degrees)),
+                cos(degrees_to_radians(h_prime_degrees)) * sin(degrees_to_radians(latitude))
+                    - tan(degrees_to_radians(delta_prime)) * cos(degrees_to_radians(latitude)),
+            )),
+    );
+
+    // Apply atmospheric refraction if requested
+    let elevation_angle = 90.0 - zenith_angle;
+    let final_zenith = refraction.map_or(zenith_angle, |correction| {
+        if elevation_angle > SUNRISE_SUNSET_ANGLE {
+            let pressure = correction.pressure();
+            let temperature = correction.temperature();
+            // Apply refraction correction following the same pattern as calculate_topocentric_zenith_angle
+            zenith_angle
+                - (pressure / 1010.0) * (283.0 / (273.0 + temperature)) * 1.02
+                    / (60.0
+                        * tan(degrees_to_radians(
+                            elevation_angle + 10.3 / (elevation_angle + 5.11),
+                        )))
+        } else {
+            zenith_angle
+        }
+    });
+
+    SolarPosition::new(azimuth, final_zenith)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1016,8 +1097,12 @@ mod tests {
             .unwrap();
 
         let result = solar_position(
-            datetime, 37.7749, // San Francisco
-            -122.4194, 0.0, 69.0, 1013.25, 15.0,
+            datetime,
+            37.7749, // San Francisco
+            -122.4194,
+            0.0,
+            69.0,
+            Some(RefractionCorrection::new(1013.25, 15.0).unwrap()),
         );
 
         assert!(result.is_ok());
@@ -1102,7 +1187,7 @@ mod tests {
             .parse::<DateTime<FixedOffset>>()
             .unwrap();
 
-        let result = solar_position_no_refraction(datetime, 37.7749, -122.4194, 0.0, 69.0);
+        let result = solar_position(datetime, 37.7749, -122.4194, 0.0, 69.0, None);
 
         assert!(result.is_ok());
         let position = result.unwrap();
@@ -1117,10 +1202,30 @@ mod tests {
             .unwrap();
 
         // Invalid latitude
-        assert!(solar_position(datetime, 95.0, 0.0, 0.0, 0.0, 1013.25, 15.0).is_err());
+        assert!(
+            solar_position(
+                datetime,
+                95.0,
+                0.0,
+                0.0,
+                0.0,
+                Some(RefractionCorrection::new(1013.25, 15.0).unwrap())
+            )
+            .is_err()
+        );
 
         // Invalid longitude
-        assert!(solar_position(datetime, 0.0, 185.0, 0.0, 0.0, 1013.25, 15.0).is_err());
+        assert!(
+            solar_position(
+                datetime,
+                0.0,
+                185.0,
+                0.0,
+                0.0,
+                Some(RefractionCorrection::new(1013.25, 15.0).unwrap())
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -1143,219 +1248,4 @@ mod tests {
         assert_eq!(Horizon::CivilTwilight.elevation_angle(), -6.0);
         assert_eq!(Horizon::Custom(-10.5).elevation_angle(), -10.5);
     }
-}
-
-/// Extract expensive time-dependent parts of SPA calculation (steps 1-11).
-///
-/// This function calculates the expensive astronomical quantities that are independent
-/// of observer location. For coordinate sweeps (many locations at fixed time), this
-/// provides approximately 7× speedup with perfect accuracy.
-///
-/// # Performance
-///
-/// Use this with [`spa_with_time_dependent_parts`] for coordinate sweeps:
-/// ```rust
-/// use solar_positioning::spa;
-/// use chrono::{DateTime, Utc};
-///
-/// let datetime = "2023-06-21T12:00:00Z".parse::<DateTime<Utc>>().unwrap();
-/// let shared_parts = spa::spa_time_dependent_parts(datetime, 69.0)?;
-///
-/// for lat in -60..=60 {
-///     for lon in -180..=179 {
-///         let pos = spa::spa_with_time_dependent_parts(
-///             datetime, lat as f64, lon as f64, 0.0, 69.0, 1013.25, 15.0,
-///             &shared_parts
-///         )?;
-///     }
-/// }
-/// # Ok::<(), Box<dyn std::error::Error>>(())
-/// ```
-#[cfg(feature = "unstable")]
-pub fn spa_time_dependent_parts<Tz: TimeZone>(
-    datetime: DateTime<Tz>,
-    delta_t: f64,
-) -> Result<SpaTimeDependent> {
-    use crate::time::JulianDate;
-
-    // Convert to UTC for calculations
-    let utc_datetime = datetime.with_timezone(&chrono::Utc);
-    let jd = JulianDate::from_datetime(&utc_datetime, delta_t)?;
-    let jme = jd.julian_ephemeris_millennium();
-    let jce = jd.julian_ephemeris_century();
-
-    // Step 1: Calculate Earth heliocentric longitude, L
-    let l_terms = calculate_lbr_terms(jme, TERMS_L);
-    let l_degrees =
-        normalize_degrees_0_to_360(radians_to_degrees(calculate_lbr_polynomial(jme, &l_terms)));
-
-    // Step 2: Calculate Earth heliocentric latitude, B
-    let b_terms = calculate_lbr_terms(jme, TERMS_B);
-    let b_degrees =
-        normalize_degrees_0_to_360(radians_to_degrees(calculate_lbr_polynomial(jme, &b_terms)));
-
-    // Step 3: Calculate Earth radius vector, R
-    let r_terms = calculate_lbr_terms(jme, TERMS_R);
-    let r = calculate_lbr_polynomial(jme, &r_terms);
-
-    if r == 0.0 {
-        return Err(Error::computation_error("Earth radius vector is zero"));
-    }
-
-    // Step 4: Calculate geocentric longitude and latitude
-    let theta_degrees = normalize_degrees_0_to_360(l_degrees + 180.0);
-    let beta_degrees = -b_degrees;
-
-    // Step 5: Calculate nutation
-    let x_terms = calculate_nutation_terms(jce);
-    let delta_psi_epsilon = calculate_delta_psi_epsilon(jce, &x_terms);
-
-    // Step 6: Calculate true obliquity of the ecliptic
-    let epsilon_degrees =
-        calculate_true_obliquity_of_ecliptic(&jd, delta_psi_epsilon.delta_epsilon);
-
-    // Step 7: Calculate aberration correction
-    let delta_tau = ABERRATION_CONSTANT / (SECONDS_PER_HOUR * r);
-
-    // Step 8: Calculate apparent sun longitude
-    let lambda_degrees = theta_degrees + delta_psi_epsilon.delta_psi + delta_tau;
-
-    // Step 9: Calculate apparent sidereal time at Greenwich
-    let nu_degrees = calculate_apparent_sidereal_time_at_greenwich(
-        &jd,
-        delta_psi_epsilon.delta_psi,
-        epsilon_degrees,
-    );
-
-    // Step 10: Calculate geocentric sun right ascension
-    let beta = degrees_to_radians(beta_degrees);
-    let epsilon = degrees_to_radians(epsilon_degrees);
-    let lambda = degrees_to_radians(lambda_degrees);
-    let alpha_degrees = calculate_geocentric_sun_right_ascension(beta, epsilon, lambda);
-
-    // Step 11: Calculate geocentric sun declination
-    let delta_degrees =
-        radians_to_degrees(calculate_geocentric_sun_declination(beta, epsilon, lambda));
-
-    Ok(SpaTimeDependent {
-        theta_degrees,
-        beta_degrees,
-        r,
-        delta_psi: delta_psi_epsilon.delta_psi,
-        epsilon_degrees,
-        lambda_degrees,
-        nu_degrees,
-        alpha_degrees,
-        delta_degrees,
-    })
-}
-
-/// Complete SPA calculation using pre-computed time-dependent parts (steps 12+).
-///
-/// This function completes the SPA calculation using cached intermediate values
-/// from [`spa_time_dependent_parts`]. Used together, these provide significant
-/// speedup for coordinate sweeps with unchanged accuracy.
-///
-/// # Parameters
-///
-/// * `datetime` - The date and time (must match the datetime used for `time_dependent`)
-/// * `latitude` - Observer latitude in decimal degrees [-90, 90]
-/// * `longitude` - Observer longitude in decimal degrees [-180, 180]
-/// * `elevation` - Observer elevation above sea level in meters
-/// * `delta_t` - Difference between Earth rotation time and terrestrial time in seconds (must match `time_dependent`)
-/// * `pressure` - Annual average local pressure in millibars
-/// * `temperature` - Annual average local temperature in degrees Celsius
-/// * `time_dependent` - Pre-computed time-dependent calculations from [`spa_time_dependent_parts`]
-#[cfg(feature = "unstable")]
-pub fn spa_with_time_dependent_parts<Tz: TimeZone>(
-    datetime: DateTime<Tz>,
-    latitude: f64,
-    longitude: f64,
-    elevation: f64,
-    delta_t: f64,
-    pressure: f64,
-    temperature: f64,
-    time_dependent: &SpaTimeDependent,
-) -> Result<SolarPosition> {
-    check_coordinates(latitude, longitude)?;
-
-    // Step 12: Calculate observer local hour angle
-    // nu_degrees needs to be calculated precisely for each timestamp
-    let jd = JulianDate::from_datetime(&datetime, delta_t)?; // Get precise Julian date
-    let nu_degrees = calculate_apparent_sidereal_time_at_greenwich(
-        &jd,
-        time_dependent.delta_psi,
-        time_dependent.epsilon_degrees,
-    );
-
-    // Calculate geocentric sun right ascension and declination
-    let beta = degrees_to_radians(time_dependent.beta_degrees);
-    let epsilon = degrees_to_radians(time_dependent.epsilon_degrees);
-    let lambda = degrees_to_radians(time_dependent.lambda_degrees);
-    let alpha_degrees = calculate_geocentric_sun_right_ascension(beta, epsilon, lambda);
-    let delta_degrees =
-        radians_to_degrees(calculate_geocentric_sun_declination(beta, epsilon, lambda));
-
-    let h_degrees = normalize_degrees_0_to_360(nu_degrees + longitude - alpha_degrees);
-    let h = degrees_to_radians(h_degrees);
-
-    // Step 13: Calculate topocentric sun right ascension and declination
-    let xi_degrees = 8.794 / (3600.0 * time_dependent.r);
-    let xi = degrees_to_radians(xi_degrees);
-    let phi = degrees_to_radians(latitude);
-    let delta = degrees_to_radians(delta_degrees);
-
-    let u = atan(EARTH_FLATTENING_FACTOR * tan(phi));
-    let y = EARTH_FLATTENING_FACTOR * sin(u) + (elevation / EARTH_RADIUS_METERS) * sin(phi);
-    let x = cos(u) + (elevation / EARTH_RADIUS_METERS) * cos(phi);
-
-    let delta_alpha_prime_degrees = radians_to_degrees(atan2(
-        -x * sin(xi) * sin(h),
-        cos(delta) - x * sin(xi) * cos(h),
-    ));
-    let _alpha_prime_degrees = alpha_degrees + delta_alpha_prime_degrees;
-
-    let delta_prime = radians_to_degrees(atan2(
-        (sin(delta) - y * sin(xi)) * cos(degrees_to_radians(delta_alpha_prime_degrees)),
-        cos(delta) - x * sin(xi) * cos(h),
-    ));
-
-    // Step 14: Calculate topocentric local hour angle
-    let h_prime_degrees = h_degrees - delta_alpha_prime_degrees;
-
-    // Step 15: Calculate topocentric zenith angle
-    let zenith_angle = radians_to_degrees(acos(
-        sin(degrees_to_radians(latitude)) * sin(degrees_to_radians(delta_prime))
-            + cos(degrees_to_radians(latitude))
-                * cos(degrees_to_radians(delta_prime))
-                * cos(degrees_to_radians(h_prime_degrees)),
-    ));
-
-    // Step 16: Calculate topocentric azimuth angle
-    let azimuth = normalize_degrees_0_to_360(
-        180.0
-            + radians_to_degrees(atan2(
-                sin(degrees_to_radians(h_prime_degrees)),
-                cos(degrees_to_radians(h_prime_degrees)) * sin(degrees_to_radians(latitude))
-                    - tan(degrees_to_radians(delta_prime)) * cos(degrees_to_radians(latitude)),
-            )),
-    );
-
-    // Apply atmospheric refraction if conditions are reasonable
-    let elevation_angle = 90.0 - zenith_angle;
-    let final_zenith = if check_refraction_params_usable(pressure, temperature)
-        && elevation_angle > SUNRISE_SUNSET_ANGLE
-    {
-        // Apply refraction correction following the same pattern as calculate_topocentric_zenith_angle
-        zenith_angle
-            - (pressure / 1010.0) * (283.0 / (273.0 + temperature)) * 1.02
-                / (60.0
-                    * tan(degrees_to_radians(
-                        elevation_angle + 10.3 / (elevation_angle + 5.11),
-                    )))
-    } else {
-        zenith_angle
-    };
-
-    SolarPosition::new(azimuth, final_zenith)
 }

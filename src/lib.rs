@@ -5,14 +5,12 @@
 //! This library provides implementations of two complementary solar positioning algorithms:
 //! - **SPA** (Solar Position Algorithm): NREL's high-accuracy algorithm (±0.0003° uncertainty, years -2000 to 6000)
 //! - **Grena3**: Simplified algorithm (±0.01° accuracy, years 2010-2110, ~10x faster)
-
 //!
 //! ## Features
 //!
 //! - Thread-safe, immutable data structures
-//! - Performance optimizations for bulk calculations (6-7× speedup)
+//! - Performance optimizations for bulk calculations (SPA only, 6-7x speedup)
 //! - Comprehensive test suite with reference data validation
-//! - Optional serialization support with Serde
 //!
 //! ## Quick Start
 //!
@@ -49,14 +47,7 @@
 //! A simplified algorithm optimized for years 2010-2110. Approximately 10 times faster
 //! than SPA while maintaining good accuracy (maximum error 0.01 degrees).
 //!
-//! ## Performance Optimizations
-//!
-//! For bulk calculations, significant speedups are available:
-//!
-//! - **Coordinate sweeps** (many locations, fixed time): ~7× speedup using `spa_time_dependent_parts()`
-//! - **Combined patterns** (spatial-temporal grids): ~6× speedup using time-based caching
-//!
-//! These optimizations require the `unstable` feature flag and are documented in the `spa` module.
+//! These optimizations are documented in the `spa` module.
 //!
 //! ## Coordinate System
 //!

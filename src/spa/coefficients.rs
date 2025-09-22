@@ -9,7 +9,7 @@
 ///
 /// Multi-dimensional array structure: \[`power_of_jme`\]\[`coefficient_index`\]\[A, B, C\]
 /// where each term represents A * cos(B + C * JME)
-pub const TERMS_L: &[&[&[f64; 3]]] = &[
+pub(super) const TERMS_L: &[&[&[f64; 3]]] = &[
     // L0 terms (JME^0)
     &[
         &[175347046.0, 0.0, 0.0],
@@ -158,7 +158,7 @@ pub const TERMS_L: &[&[&[f64; 3]]] = &[
 ];
 
 /// Earth heliocentric latitude periodic terms (`TERMS_B`).
-pub const TERMS_B: &[&[&[f64; 3]]] = &[
+pub(super) const TERMS_B: &[&[&[f64; 3]]] = &[
     // B0 terms (JME^0)
     &[
         &[280.0, 3.199, 84334.662],
@@ -172,7 +172,7 @@ pub const TERMS_B: &[&[&[f64; 3]]] = &[
 ];
 
 /// Earth radius vector periodic terms (`TERMS_R`).
-pub const TERMS_R: &[&[&[f64; 3]]] = &[
+pub(super) const TERMS_R: &[&[&[f64; 3]]] = &[
     // R0 terms (JME^0)
     &[
         &[100013989.0, 0.0, 0.0],
@@ -245,7 +245,7 @@ pub const TERMS_R: &[&[&[f64; 3]]] = &[
 ];
 
 /// Nutation polynomial coefficients.
-pub(crate) const NUTATION_COEFFS: &[&[f64]] = &[
+pub(super) const NUTATION_COEFFS: &[&[f64]] = &[
     &[297.85036, 445267.111480, -0.0019142, 1.0 / 189474.0],
     &[357.52772, 35999.050340, -0.0001603, -1.0 / 300000.0],
     &[134.96298, 477198.867398, 0.0086972, 1.0 / 56250.0],
@@ -254,7 +254,7 @@ pub(crate) const NUTATION_COEFFS: &[&[f64]] = &[
 ];
 
 /// Y term coefficients for nutation calculations.
-pub(crate) const TERMS_Y: &[&[i32]] = &[
+pub(super) const TERMS_Y: &[&[i32]] = &[
     &[0, 0, 0, 0, 1],
     &[-2, 0, 0, 2, 2],
     &[0, 0, 0, 2, 2],
@@ -322,7 +322,7 @@ pub(crate) const TERMS_Y: &[&[i32]] = &[
 
 /// Periodic terms for nutation in longitude and obliquity (`TERMS_PE`).
 /// Each row contains [Δψ₀, Δψ₁, Δε₀, Δε₁] coefficients.
-pub(crate) const TERMS_PE: &[&[f64]] = &[
+pub(super) const TERMS_PE: &[&[f64]] = &[
     &[-171996.0, -174.2, 92025.0, 8.9],
     &[-13187.0, -1.6, 5736.0, -3.1],
     &[-2274.0, -0.2, 977.0, -0.5],
@@ -389,6 +389,6 @@ pub(crate) const TERMS_PE: &[&[f64]] = &[
 ];
 
 /// Obliquity of the ecliptic polynomial coefficients (in arcseconds).
-pub(crate) const OBLIQUITY_COEFFS: &[f64] = &[
+pub(super) const OBLIQUITY_COEFFS: &[f64] = &[
     84381.448, -4680.93, -1.55, 1999.25, 51.38, -249.67, -39.05, 7.12, 27.87, 5.79, 2.45,
 ];

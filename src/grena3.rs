@@ -1,10 +1,12 @@
 //! Grena3 solar position algorithm implementation.
 //!
-//! This follows the no. 3 algorithm described in Grena, 'Five new algorithms for the computation
-//! of sun position from 2010 to 2110', Solar Energy 86 (2012) pp. 1323-1337.
+//! This follows the no. 3 algorithm described by Roberto Grena of ENEA (2012).
 //!
 //! The algorithm is designed for the years 2010 to 2110, with a maximum error of 0.01 degrees.
 //! It's approximately 10x faster than the SPA algorithm but with reduced accuracy and time range.
+//!
+//! Reference: Grena, R. (2012). Five new algorithms for the computation of sun position from 2010 to 2110.
+//! Solar Energy, 86(5), 1323-1337. DOI: <http://dx.doi.org/10.1016/j.solener.2012.01.024>
 
 #![allow(clippy::unreadable_literal)]
 #![allow(clippy::many_single_char_names)]

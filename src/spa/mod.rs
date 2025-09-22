@@ -2,6 +2,9 @@
 //!
 //! High-accuracy solar positioning based on the NREL algorithm by Reda & Andreas (2003).
 //! Provides uncertainties of ±0.0003 degrees for years -2000 to 6000.
+//!
+//! Reference: Reda, I.; Andreas, A. (2003). Solar position algorithm for solar radiation applications.
+//! Solar Energy, 76(5), 577-589. DOI: <http://dx.doi.org/10.1016/j.solener.2003.12.003>
 
 #![allow(clippy::similar_names)]
 #![allow(clippy::many_single_char_names)]
@@ -13,7 +16,7 @@ use crate::math::{
     polynomial, radians_to_degrees, sin, tan,
 };
 use crate::time::JulianDate;
-use crate::{Error, Horizon, RefractionCorrection, Result, SolarPosition};
+use crate::{Horizon, RefractionCorrection, Result, SolarPosition};
 use chrono::{DateTime, TimeZone};
 
 pub mod coefficients;
@@ -155,11 +158,16 @@ fn calculate_lbr_polynomial(jme: f64, terms: &[f64]) -> f64 {
 }
 
 /// Calculate nutation terms (X values).
-fn calculate_nutation_terms(jce: f64) -> Vec<f64> {
-    NUTATION_COEFFS
-        .iter()
-        .map(|coeffs| polynomial(coeffs, jce))
-        .collect()
+fn calculate_nutation_terms(jce: f64) -> [f64; 5] {
+    // Use fixed-size array to avoid heap allocation
+    // NUTATION_COEFFS always has exactly 5 elements
+    [
+        polynomial(NUTATION_COEFFS[0], jce),
+        polynomial(NUTATION_COEFFS[1], jce),
+        polynomial(NUTATION_COEFFS[2], jce),
+        polynomial(NUTATION_COEFFS[3], jce),
+        polynomial(NUTATION_COEFFS[4], jce),
+    ]
 }
 
 /// Calculate nutation in longitude and obliquity.
@@ -644,7 +652,10 @@ fn calculate_alpha_delta(jme: f64, delta_psi: f64, epsilon_degrees: f64) -> Alph
     // 3.2.4. Calculate Earth radius vector, R
     let r_terms = calculate_lbr_terms(jme, TERMS_R);
     let r = calculate_lbr_polynomial(jme, &r_terms);
-    assert!(r != 0.0);
+    assert!(
+        r != 0.0,
+        "Earth radius vector is zero - astronomical impossibility"
+    );
 
     // 3.2.2. Calculate Earth heliocentric longitude, L
     let l_terms = calculate_lbr_terms(jme, TERMS_L);
@@ -892,6 +903,9 @@ fn calculate_sunrise_sunset_spa_algorithm_with_precomputed<Tz: TimeZone>(
 ///
 /// # Errors
 /// Returns error if Julian date calculation fails for the provided datetime
+///
+/// # Panics
+/// May panic if Earth's radius vector is zero (astronomical impossibility)
 #[allow(clippy::needless_pass_by_value)]
 pub fn spa_time_dependent_parts<Tz: TimeZone>(
     datetime: DateTime<Tz>,
@@ -919,9 +933,11 @@ pub fn spa_time_dependent_parts<Tz: TimeZone>(
     let r_terms = calculate_lbr_terms(jme, TERMS_R);
     let r = calculate_lbr_polynomial(jme, &r_terms);
 
-    if r == 0.0 {
-        return Err(Error::computation_error("Earth radius vector is zero"));
-    }
+    // Earth's radius vector should never be zero (would mean Earth at center of Sun)
+    assert!(
+        r != 0.0,
+        "Earth radius vector is zero - astronomical impossibility"
+    );
 
     // 3.2.5. Calculate the geocentric longitude, theta (in degrees)
     let theta_degrees = normalize_degrees_0_to_360(l_degrees + 180.0);
@@ -1012,22 +1028,16 @@ pub fn spa_with_time_dependent_parts<Tz: TimeZone>(
         time_dependent.epsilon_degrees,
     );
 
-    // Calculate geocentric sun right ascension and declination
-    let beta = degrees_to_radians(time_dependent.beta_degrees);
-    let epsilon = degrees_to_radians(time_dependent.epsilon_degrees);
-    let lambda = degrees_to_radians(time_dependent.lambda_degrees);
-    let alpha_degrees = calculate_geocentric_sun_right_ascension(beta, epsilon, lambda);
-    let delta_degrees =
-        radians_to_degrees(calculate_geocentric_sun_declination(beta, epsilon, lambda));
-
-    let h_degrees = normalize_degrees_0_to_360(nu_degrees + longitude - alpha_degrees);
+    // Use pre-computed geocentric sun right ascension and declination
+    let h_degrees =
+        normalize_degrees_0_to_360(nu_degrees + longitude - time_dependent.alpha_degrees);
     let h = degrees_to_radians(h_degrees);
 
     // 3.10-3.11. Calculate the topocentric sun coordinates
     let xi_degrees = 8.794 / (3600.0 * time_dependent.r);
     let xi = degrees_to_radians(xi_degrees);
     let phi = degrees_to_radians(latitude);
-    let delta = degrees_to_radians(delta_degrees);
+    let delta = degrees_to_radians(time_dependent.delta_degrees);
 
     let u = atan(EARTH_FLATTENING_FACTOR * tan(phi));
     let y = EARTH_FLATTENING_FACTOR.mul_add(sin(u), (elevation / EARTH_RADIUS_METERS) * sin(phi));

@@ -6,6 +6,13 @@
 //! - **SPA** (Solar Position Algorithm): NREL's high-accuracy algorithm (±0.0003° uncertainty, years -2000 to 6000)
 //! - **Grena3**: Simplified algorithm (±0.01° accuracy, years 2010-2110, ~10x faster)
 //!
+//! ## References
+//!
+//! - Reda, I.; Andreas, A. (2003). Solar position algorithm for solar radiation applications.
+//!   Solar Energy, 76(5), 577-589. DOI: <http://dx.doi.org/10.1016/j.solener.2003.12.003>
+//! - Grena, R. (2012). Five new algorithms for the computation of sun position from 2010 to 2110.
+//!   Solar Energy, 86(5), 1323-1337. DOI: <http://dx.doi.org/10.1016/j.solener.2012.01.024>
+//!
 //! ## Features
 //!
 //! - Thread-safe, immutable data structures

@@ -94,41 +94,36 @@ pub fn solar_position<Tz: TimeZone>(
     delta_t: f64,
     refraction: Option<RefractionCorrection>,
 ) -> Result<SolarPosition> {
-    // Convenience wrapper that calls the split functions in sequence
-    let time_dependent = spa_time_dependent_parts(datetime.clone(), delta_t)?;
-    spa_with_time_dependent_parts(
-        datetime,
-        latitude,
-        longitude,
-        elevation,
-        delta_t,
-        refraction,
-        &time_dependent,
-    )
+    let time_dependent = spa_time_dependent_parts(datetime, delta_t)?;
+    spa_with_time_dependent_parts(latitude, longitude, elevation, refraction, &time_dependent)
 }
 
-/// Represents nutation corrections for longitude and obliquity.
 /// Time-dependent intermediate values from SPA calculation (steps 1-11).
+///
+/// This is an opaque data structure containing pre-computed astronomical values
+/// that are independent of observer location. Use with [`spa_with_time_dependent_parts`]
+/// for efficient coordinate sweeps.
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // Fields are accessed through the whole struct, not individually
 pub struct SpaTimeDependent {
     /// Geocentric longitude (degrees)
-    pub theta_degrees: f64,
+    pub(crate) theta_degrees: f64,
     /// Geocentric latitude (degrees)
-    pub beta_degrees: f64,
+    pub(crate) beta_degrees: f64,
     /// Earth radius vector (AU)
-    pub r: f64,
+    pub(crate) r: f64,
     /// Nutation in longitude (degrees)
-    pub delta_psi: f64,
+    pub(crate) delta_psi: f64,
     /// True obliquity of ecliptic (degrees)
-    pub epsilon_degrees: f64,
+    pub(crate) epsilon_degrees: f64,
     /// Apparent sun longitude (degrees)
-    pub lambda_degrees: f64,
+    pub(crate) lambda_degrees: f64,
     /// Apparent sidereal time at Greenwich (degrees)
-    pub nu_degrees: f64,
+    pub(crate) nu_degrees: f64,
     /// Geocentric sun right ascension (degrees)
-    pub alpha_degrees: f64,
+    pub(crate) alpha_degrees: f64,
     /// Geocentric sun declination (degrees)
-    pub delta_degrees: f64,
+    pub(crate) delta_degrees: f64,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -893,8 +888,7 @@ fn calculate_sunrise_sunset_spa_algorithm_with_precomputed<Tz: TimeZone>(
 /// for lat in -60..=60 {
 ///     for lon in -180..=179 {
 ///         let pos = spa::spa_with_time_dependent_parts(
-///             datetime, lat as f64, lon as f64, 0.0, 69.0, None,
-///             &shared_parts
+///             lat as f64, lon as f64, 0.0, None, &shared_parts
 ///         )?;
 ///     }
 /// }
@@ -996,37 +990,26 @@ pub fn spa_time_dependent_parts<Tz: TimeZone>(
 ///
 /// # Parameters
 ///
-/// * `datetime` - The date and time (must match the datetime used for `time_dependent`)
 /// * `latitude` - Observer latitude in decimal degrees [-90, 90]
 /// * `longitude` - Observer longitude in decimal degrees [-180, 180]
 /// * `elevation` - Observer elevation above sea level in meters
-/// * `delta_t` - Difference between Earth rotation time and terrestrial time in seconds (must match `time_dependent`)
 /// * `refraction` - Optional atmospheric refraction correction
 /// * `time_dependent` - Pre-computed time-dependent calculations from [`spa_time_dependent_parts`]
 ///
 /// # Errors
 /// Returns error for invalid coordinates (latitude outside ±90°, longitude outside ±180°)
-/// or if Julian date calculation fails
-#[allow(clippy::needless_pass_by_value)]
-pub fn spa_with_time_dependent_parts<Tz: TimeZone>(
-    datetime: DateTime<Tz>,
+pub fn spa_with_time_dependent_parts(
     latitude: f64,
     longitude: f64,
     elevation: f64,
-    delta_t: f64,
     refraction: Option<RefractionCorrection>,
     time_dependent: &SpaTimeDependent,
 ) -> Result<SolarPosition> {
     check_coordinates(latitude, longitude)?;
 
     // 3.9. Calculate the observer local hour angle, H (in degrees)
-    // nu_degrees needs to be calculated precisely for each timestamp
-    let jd = JulianDate::from_datetime(&datetime, delta_t)?; // Get precise Julian date
-    let nu_degrees = calculate_apparent_sidereal_time_at_greenwich(
-        &jd,
-        time_dependent.delta_psi,
-        time_dependent.epsilon_degrees,
-    );
+    // Use pre-computed apparent sidereal time from time_dependent parts
+    let nu_degrees = time_dependent.nu_degrees;
 
     // Use pre-computed geocentric sun right ascension and declination
     let h_degrees =

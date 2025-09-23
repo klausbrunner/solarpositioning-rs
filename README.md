@@ -59,7 +59,7 @@ let time_dependent = spa::spa_time_dependent_parts(datetime, delta_t).unwrap();
 for lat in 45..=50 {
     for lon in 10..=20 {
         let position = spa::spa_with_time_dependent_parts(
-            datetime, lat as f64, lon as f64, 0.0, delta_t,
+            lat as f64, lon as f64, 0.0,
             Some(RefractionCorrection::standard()),
             &time_dependent
         ).unwrap();

@@ -89,11 +89,9 @@ fn test_sunce_standard_case_optimization() {
 
         for &(lat, lon) in test_coords {
             let _result = spa::spa_with_time_dependent_parts(
-                time,
                 lat,
                 lon,
                 0.0,
-                69.0,
                 Some(solar_positioning::RefractionCorrection::new(1013.25, 15.0).unwrap()),
                 time_parts,
             )

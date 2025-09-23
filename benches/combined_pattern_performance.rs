@@ -76,11 +76,9 @@ fn benchmark_combined_patterns(c: &mut Criterion) {
 
                         for &(lat, lon) in &coordinates {
                             let _result = spa::spa_with_time_dependent_parts(
-                                black_box(time),
                                 black_box(lat),
                                 black_box(lon),
                                 black_box(0.0),
-                                black_box(69.0),
                                 black_box(Some(
                                     solar_positioning::RefractionCorrection::new(1013.25, 15.0)
                                         .unwrap(),
@@ -132,11 +130,9 @@ fn benchmark_optimization_scaling(c: &mut Criterion) {
 
                         for &(lat, lon) in &coordinates {
                             let _result = spa::spa_with_time_dependent_parts(
-                                black_box(time),
                                 black_box(lat),
                                 black_box(lon),
                                 black_box(0.0),
-                                black_box(69.0),
                                 black_box(Some(
                                     solar_positioning::RefractionCorrection::new(1013.25, 15.0)
                                         .unwrap(),

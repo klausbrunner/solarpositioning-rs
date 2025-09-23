@@ -1,6 +1,10 @@
 # Changelog
 
-## [Unreleased]
+## [0.3.3] - 2025-09-23
+
+### Changed
+
+- **BREAKING** fix: remove useless parameters from `spa_with_time_dependent_parts()` and make `SpaTimeDependent` opaque
 
 ## [0.3.1] - 2025-09-22
 

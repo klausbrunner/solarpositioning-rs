@@ -54,8 +54,6 @@
 //! A simplified algorithm optimized for years 2010-2110. Approximately 10 times faster
 //! than SPA while maintaining good accuracy (maximum error 0.01 degrees).
 //!
-//! These optimizations are documented in the `spa` module.
-//!
 //! ## Coordinate System
 //!
 //! - **Azimuth**: 0° = North, measured clockwise (0° to 360°)

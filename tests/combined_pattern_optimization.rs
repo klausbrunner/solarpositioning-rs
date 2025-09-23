@@ -70,11 +70,9 @@ fn test_combined_pattern_realistic_scenario() {
         // Fast calculation for each coordinate using cached time parts
         for &(lat, lon) in &coordinates {
             let result = spa::spa_with_time_dependent_parts(
-                time,
                 lat,
                 lon,
                 100.0,
-                69.0,
                 Some(solar_positioning::RefractionCorrection::new(1013.25, 15.0).unwrap()),
                 time_parts,
             )
@@ -145,11 +143,9 @@ fn test_combined_pattern_varying_time_density() {
 
             for &(lat, lon) in &coordinates {
                 let _result = spa::spa_with_time_dependent_parts(
-                    time,
                     lat,
                     lon,
                     0.0,
-                    69.0,
                     Some(solar_positioning::RefractionCorrection::new(1013.25, 15.0).unwrap()),
                     time_parts,
                 )
@@ -189,11 +185,9 @@ fn test_combined_vs_pure_patterns() {
     let time_parts = spa::spa_time_dependent_parts(base_datetime, 69.0).unwrap();
     for &(lat, lon) in &coordinates {
         let _result = spa::spa_with_time_dependent_parts(
-            base_datetime,
             lat,
             lon,
             0.0,
-            69.0,
             Some(solar_positioning::RefractionCorrection::new(1013.25, 15.0).unwrap()),
             &time_parts,
         )
@@ -217,11 +211,9 @@ fn test_combined_vs_pure_patterns() {
             .or_insert_with(|| spa::spa_time_dependent_parts(time, 69.0).unwrap());
         for &(lat, lon) in &coords_small {
             let _result = spa::spa_with_time_dependent_parts(
-                time,
                 lat,
                 lon,
                 0.0,
-                69.0,
                 Some(solar_positioning::RefractionCorrection::new(1013.25, 15.0).unwrap()),
                 time_parts,
             )

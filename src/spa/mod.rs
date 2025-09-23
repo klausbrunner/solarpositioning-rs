@@ -243,7 +243,7 @@ fn calculate_geocentric_sun_declination(beta_rad: f64, epsilon_rad: f64, lambda_
 /// sunrise, transit (solar noon), and sunset times with high accuracy.
 ///
 /// # Arguments
-/// * `date` - UTC date for calculations (time is ignored, calculations are for the entire day)
+/// * `date` - Date for calculations
 /// * `latitude` - Observer latitude in degrees (-90 to +90)
 /// * `longitude` - Observer longitude in degrees (-180 to +180)
 /// * `delta_t` - ΔT in seconds (difference between TT and UT1)
@@ -256,7 +256,7 @@ fn calculate_geocentric_sun_declination(beta_rad: f64, epsilon_rad: f64, lambda_
 /// Returns error for invalid coordinates (latitude outside ±90°, longitude outside ±180°)
 ///
 /// # Panics
-/// May panic if date conversion fails (should not occur for valid UTC dates)
+/// May panic if date cannot be converted to start of day (unlikely with valid dates).
 ///
 /// # Example
 /// ```rust
@@ -590,14 +590,17 @@ struct FinalTimeParams<Tz: TimeZone> {
 /// sunrise/twilight calculations.
 ///
 /// # Arguments
-/// * `date` - UTC date for calculations
-/// * `latitude` - Observer latitude in degrees
-/// * `longitude` - Observer longitude in degrees
-/// * `delta_t` - ΔT in seconds
+/// * `date` - Date for calculations
+/// * `latitude` - Observer latitude in degrees (-90 to +90)
+/// * `longitude` - Observer longitude in degrees (-180 to +180)
+/// * `delta_t` - ΔT in seconds (difference between TT and UT1)
 /// * `horizon` - Horizon type (sunrise/sunset, civil twilight, etc.)
 ///
 /// # Errors
 /// Returns error for invalid coordinates, dates, or computation failures.
+///
+/// # Panics
+/// May panic if date cannot be converted to start of day (unlikely with valid dates).
 ///
 /// # Example
 /// ```rust
@@ -741,7 +744,7 @@ fn limit_h_prime(h_prime: f64) -> f64 {
 /// efficient than separate calls as it reuses expensive astronomical calculations.
 ///
 /// # Arguments
-/// * `date` - UTC date and time
+/// * `date` - Date for calculations
 /// * `latitude` - Observer latitude in degrees (-90 to +90)
 /// * `longitude` - Observer longitude in degrees (-180 to +180)
 /// * `delta_t` - ΔT in seconds (difference between TT and UT1)
@@ -749,6 +752,9 @@ fn limit_h_prime(h_prime: f64) -> f64 {
 ///
 /// # Returns
 /// Iterator over `Result<(Horizon, SunriseResult)>`
+///
+/// # Errors
+/// Returns error for invalid coordinates (latitude outside ±90°, longitude outside ±180°)
 ///
 /// # Panics
 /// May panic if date cannot be converted to start of day (unlikely with valid dates).
@@ -875,6 +881,13 @@ fn calculate_sunrise_sunset_spa_algorithm_with_precomputed<Tz: TimeZone>(
 /// of observer location. Typically used for coordinate sweeps (many locations at fixed
 /// time).
 ///
+/// # Arguments
+/// * `datetime` - Date and time with timezone
+/// * `delta_t` - ΔT in seconds (difference between TT and UT1)
+///
+/// # Returns
+/// Pre-computed time-dependent values for SPA calculations
+///
 /// # Performance
 ///
 /// Use this with [`spa_with_time_dependent_parts`] for coordinate sweeps:
@@ -988,16 +1001,37 @@ pub fn spa_time_dependent_parts<Tz: TimeZone>(
 /// from [`spa_time_dependent_parts`]. Used together, these provide significant
 /// speedup for coordinate sweeps with unchanged accuracy.
 ///
-/// # Parameters
-///
-/// * `latitude` - Observer latitude in decimal degrees [-90, 90]
-/// * `longitude` - Observer longitude in decimal degrees [-180, 180]
+/// # Arguments
+/// * `latitude` - Observer latitude in degrees (-90 to +90)
+/// * `longitude` - Observer longitude in degrees (-180 to +180)
 /// * `elevation` - Observer elevation above sea level in meters
 /// * `refraction` - Optional atmospheric refraction correction
 /// * `time_dependent` - Pre-computed time-dependent calculations from [`spa_time_dependent_parts`]
 ///
+/// # Returns
+/// Solar position or error
+///
 /// # Errors
 /// Returns error for invalid coordinates (latitude outside ±90°, longitude outside ±180°)
+///
+/// # Example
+/// ```rust
+/// use solar_positioning::{spa, RefractionCorrection};
+/// use chrono::{DateTime, Utc};
+///
+/// let datetime = "2023-06-21T12:00:00Z".parse::<DateTime<Utc>>().unwrap();
+/// let time_parts = spa::spa_time_dependent_parts(datetime, 69.0).unwrap();
+///
+/// let position = spa::spa_with_time_dependent_parts(
+///     37.7749,   // San Francisco latitude
+///     -122.4194, // San Francisco longitude
+///     0.0,       // elevation (meters)
+///     Some(RefractionCorrection::standard()),
+///     &time_parts
+/// ).unwrap();
+///
+/// println!("Azimuth: {:.3}°", position.azimuth());
+/// ```
 pub fn spa_with_time_dependent_parts(
     latitude: f64,
     longitude: f64,

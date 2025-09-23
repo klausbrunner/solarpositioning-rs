@@ -44,10 +44,13 @@ impl JulianDate {
     /// * `delta_t` - ΔT in seconds (difference between TT and UT1)
     ///
     /// # Returns
-    /// Julian date or error if the date is invalid
+    /// Returns `Ok(JulianDate)` on success.
     ///
     /// # Errors
     /// Returns error if the date/time components are invalid (e.g., invalid month, day, hour).
+    ///
+    /// # Panics
+    /// This function does not panic.
     pub fn from_datetime<Tz: TimeZone>(
         datetime: &chrono::DateTime<Tz>,
         delta_t: f64,
@@ -123,13 +126,21 @@ impl JulianDate {
     /// Creates a Julian date assuming ΔT = 0.
     ///
     /// # Arguments
-    /// * `year`, `month`, `day`, `hour`, `minute`, `second` - UTC date/time components
+    /// * `year` - Year (can be negative for BCE years)
+    /// * `month` - Month (1-12)
+    /// * `day` - Day of month (1-31)
+    /// * `hour` - Hour (0-23)
+    /// * `minute` - Minute (0-59)
+    /// * `second` - Second (0-59, can include fractional seconds)
     ///
     /// # Returns
-    /// Julian date with ΔT = 0
+    /// Returns `Ok(JulianDate)` with ΔT = 0 on success.
     ///
     /// # Errors
     /// Returns error if the date/time components are outside valid ranges.
+    ///
+    /// # Panics
+    /// This function does not panic.
     pub fn from_utc_simple(
         year: i32,
         month: u32,
@@ -403,10 +414,13 @@ impl DeltaT {
     /// * `month` - Month (1-12)
     ///
     /// # Returns
-    /// Estimated ΔT in seconds
+    /// Returns estimated ΔT in seconds.
     ///
     /// # Errors
     /// Returns error if month is outside the range 1-12.
+    ///
+    /// # Panics
+    /// This function does not panic.
     pub fn estimate_from_date(year: i32, month: u32) -> Result<f64> {
         if !(1..=12).contains(&month) {
             return Err(Error::invalid_datetime("month must be between 1 and 12"));
@@ -425,10 +439,13 @@ impl DeltaT {
     /// * `date` - Any date-like type
     ///
     /// # Returns
-    /// Estimated ΔT in seconds
+    /// Returns estimated ΔT in seconds.
     ///
     /// # Errors
     /// Returns error if the date components are invalid.
+    ///
+    /// # Panics
+    /// This function does not panic.
     ///
     /// # Example
     /// ```

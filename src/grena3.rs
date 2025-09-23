@@ -27,15 +27,19 @@ use chrono::{DateTime, Datelike, TimeZone, Timelike};
 ///
 /// # Arguments
 /// * `datetime` - Timezone-aware date and time
-/// * `latitude` - Observer latitude in degrees (-90 to +90)
-/// * `longitude` - Observer longitude in degrees (-180 to +180)
+/// * `latitude` - Observer latitude in degrees (-90° to +90°)
+/// * `longitude` - Observer longitude in degrees (-180° to +180°)
 /// * `delta_t` - ΔT in seconds (difference between TT and UT1)
+/// * `refraction` - Optional atmospheric refraction correction
 ///
 /// # Returns
-/// Solar position or error
+/// Returns `Ok(SolarPosition)` with azimuth and zenith angles on success.
 ///
 /// # Errors
-/// Returns error for invalid coordinates (latitude outside ±90°, longitude outside ±180°)
+/// Returns error for invalid coordinates (latitude outside ±90°, longitude outside ±180°).
+///
+/// # Panics
+/// This function does not panic.
 ///
 /// # Example
 /// ```rust

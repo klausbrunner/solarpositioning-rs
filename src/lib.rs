@@ -6,6 +6,8 @@
 //! - **SPA** (Solar Position Algorithm): NREL's high-accuracy algorithm (±0.0003° uncertainty, years -2000 to 6000)
 //! - **Grena3**: Simplified algorithm (±0.01° accuracy, years 2010-2110, ~10x faster)
 //!
+//! In addition, it provides tools to compute Julian dates and estimate Delta T values.
+//!
 //! ## References
 //!
 //! - Reda, I.; Andreas, A. (2003). Solar position algorithm for solar radiation applications.
@@ -16,29 +18,54 @@
 //! ## Features
 //!
 //! - Thread-safe, immutable data structures
-//! - Performance optimizations for bulk calculations (SPA only, 6-7x speedup)
+//! - Performance optimizations for coordinate sweeps (SPA only)
 //! - Comprehensive test suite with reference data validation
 //!
 //! ## Quick Start
 //!
+//! ### Solar Position
 //! ```rust
-//! use solar_positioning::{spa, time::JulianDate, types::SolarPosition, RefractionCorrection};
-//! use chrono::{DateTime, FixedOffset, Utc, TimeZone};
+//! use solar_positioning::{spa, RefractionCorrection, time::DeltaT};
+//! use chrono::{DateTime, FixedOffset};
 //!
-//! // Example with time calculations
-//! let jd = JulianDate::from_utc(2023, 6, 21, 12, 0, 0.0, 69.0).unwrap();
-//! println!("Julian Date: {:.6}", jd.julian_date());
-//! println!("Julian Century: {:.6}", jd.julian_century());
+//! // Calculate sun position for Vienna at noon
+//! let datetime = "2026-06-21T12:00:00+02:00".parse::<DateTime<FixedOffset>>().unwrap();
+//! let position = spa::solar_position(
+//!     datetime,
+//!     48.21,   // Vienna latitude
+//!     16.37,   // Vienna longitude
+//!     190.0,   // elevation (meters)
+//!     DeltaT::estimate_from_date_like(datetime).unwrap(), // delta T
+//!     Some(RefractionCorrection::standard())
+//! ).unwrap();
 //!
-//! // Example with flexible timezone support - any TimeZone trait implementor
-//! let datetime_fixed = "2023-06-21T12:00:00-07:00".parse::<DateTime<FixedOffset>>().unwrap();
-//! let datetime_utc = Utc.with_ymd_and_hms(2023, 6, 21, 19, 0, 0).unwrap(); // Same moment
-//!
-//! // Both calls produce identical results
-//! let position = spa::solar_position(datetime_fixed, 37.7749, -122.4194, 0.0, 69.0,
-//!     Some(RefractionCorrection::standard())).unwrap();
 //! println!("Azimuth: {:.3}°", position.azimuth());
 //! println!("Elevation: {:.3}°", position.elevation_angle());
+//! ```
+//!
+//! ### Sunrise and Sunset
+//! ```rust
+//! use solar_positioning::{spa, Horizon, time::DeltaT};
+//! use chrono::{DateTime, FixedOffset};
+//!
+//! // Calculate sunrise/sunset for San Francisco
+//! let date = "2026-06-21T00:00:00-07:00".parse::<DateTime<FixedOffset>>().unwrap();
+//! let result = spa::sunrise_sunset_for_horizon(
+//!     date,
+//!     37.7749,  // San Francisco latitude
+//!     -122.4194, // San Francisco longitude
+//!     DeltaT::estimate_from_date_like(date).unwrap(),
+//!     Horizon::SunriseSunset
+//! ).unwrap();
+//!
+//! match result {
+//!     solar_positioning::SunriseResult::RegularDay { sunrise, transit, sunset } => {
+//!         println!("Sunrise: {}", sunrise);
+//!         println!("Solar noon: {}", transit);
+//!         println!("Sunset: {}", sunset);
+//!     }
+//!     _ => println!("No sunrise/sunset (polar day/night)"),
+//! }
 //! ```
 //!
 //! ## Algorithms
@@ -52,13 +79,13 @@
 //! ### Grena3
 //!
 //! A simplified algorithm optimized for years 2010-2110. Approximately 10 times faster
-//! than SPA while maintaining good accuracy (maximum error 0.01 degrees).
+//! than SPA while maintaining good accuracy (maximum error 0.01°).
 //!
 //! ## Coordinate System
 //!
 //! - **Azimuth**: 0° = North, measured clockwise (0° to 360°)
 //! - **Zenith angle**: 0° = directly overhead (zenith), 90° = horizon (0° to 180°)
-//! - **Elevation angle**: 0° = horizon, 90° = directly overhead (-90° to 90°)
+//! - **Elevation angle**: 0° = horizon, 90° = directly overhead (-90° to +90°)
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![deny(missing_docs)]

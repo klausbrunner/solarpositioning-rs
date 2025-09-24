@@ -8,6 +8,7 @@
 
 use crate::math::{floor, polynomial};
 use crate::{Error, Result};
+#[cfg(feature = "std")]
 use chrono::{Datelike, TimeZone, Timelike};
 
 /// Seconds per day (86,400)
@@ -34,10 +35,7 @@ pub struct JulianDate {
 impl JulianDate {
     /// Creates a new Julian date from a timezone-aware chrono `DateTime`.
     ///
-    /// This function properly handles timezone-aware datetimes by converting the entire
-    /// datetime to UTC for accurate Julian Date calculations. Solar calculations require
-    /// proper handling of the Earth's rotation relative to the Sun, which is referenced
-    /// to Universal Time.
+    /// Converts datetime to UTC for proper Julian Date calculation.
     ///
     /// # Arguments
     /// * `datetime` - Timezone-aware date and time
@@ -48,9 +46,7 @@ impl JulianDate {
     ///
     /// # Errors
     /// Returns error if the date/time components are invalid (e.g., invalid month, day, hour).
-    ///
-    /// # Panics
-    /// This function does not panic.
+    #[cfg(feature = "std")]
     pub fn from_datetime<Tz: TimeZone>(
         datetime: &chrono::DateTime<Tz>,
         delta_t: f64,
@@ -138,9 +134,6 @@ impl JulianDate {
     ///
     /// # Errors
     /// Returns error if the date/time components are outside valid ranges.
-    ///
-    /// # Panics
-    /// This function does not panic.
     pub fn from_utc_simple(
         year: i32,
         month: u32,
@@ -262,7 +255,7 @@ fn calculate_julian_date(
     jd
 }
 
-/// Utilities for estimating ΔT (Delta T) values.
+/// ΔT (Delta T) estimation functions.
 ///
 /// ΔT represents the difference between Terrestrial Time (TT) and Universal Time (UT1).
 /// These estimates are based on Espenak and Meeus polynomial fits updated in 2014.
@@ -444,9 +437,6 @@ impl DeltaT {
     /// # Errors
     /// Returns error if the date components are invalid.
     ///
-    /// # Panics
-    /// This function does not panic.
-    ///
     /// # Example
     /// ```
     /// # use solar_positioning::time::DeltaT;
@@ -462,6 +452,7 @@ impl DeltaT {
     /// let delta_t2 = DeltaT::estimate_from_date_like(date).unwrap();
     /// assert_eq!(delta_t, delta_t2);
     /// ```
+    #[cfg(feature = "std")]
     #[allow(clippy::needless_pass_by_value)]
     pub fn estimate_from_date_like<D: Datelike>(date: D) -> Result<f64> {
         Self::estimate_from_date(date.year(), date.month())
@@ -581,6 +572,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "std")]
     fn test_delta_t_from_date_like() {
         use chrono::{DateTime, FixedOffset, NaiveDate, Utc};
 

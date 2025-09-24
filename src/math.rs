@@ -9,42 +9,18 @@ use libm;
 pub const PI: f64 = core::f64::consts::PI;
 
 /// Converts degrees to radians.
-///
-/// # Arguments
-/// * `degrees` - Angle in degrees
-///
-/// # Returns
-/// Angle in radians
-///
-/// Internal function for converting degrees to radians.
 #[inline]
 pub const fn degrees_to_radians(degrees: f64) -> f64 {
     degrees.to_radians()
 }
 
 /// Converts radians to degrees.
-///
-/// # Arguments
-/// * `radians` - Angle in radians
-///
-/// # Returns
-/// Angle in degrees
-///
-/// Internal function for converting radians to degrees.
 #[inline]
 pub const fn radians_to_degrees(radians: f64) -> f64 {
     radians.to_degrees()
 }
 
 /// Normalizes an angle in degrees to the range [0, 360).
-///
-/// # Arguments
-/// * `degrees` - Angle in degrees
-///
-/// # Returns
-/// Angle normalized to [0, 360) degrees
-///
-/// Internal function for normalizing angles to [0, 360) range.
 pub fn normalize_degrees_0_to_360(degrees: f64) -> f64 {
     let normalized = degrees % 360.0;
     if normalized < 0.0 {
@@ -56,14 +32,7 @@ pub fn normalize_degrees_0_to_360(degrees: f64) -> f64 {
 
 /// Computes a polynomial using Horner's method for numerical stability.
 ///
-/// # Arguments
-/// * `coeffs` - Polynomial coefficients [a₀, a₁, a₂, ...] for a₀ + a₁x + a₂x² + ...
-/// * `x` - Variable value
-///
-/// # Returns
-/// Polynomial value
-///
-/// Internal function for evaluating polynomials using Horner's method.
+/// Coefficients are ordered [a₀, a₁, a₂, ...] for a₀ + a₁x + a₂x² + ...
 pub fn polynomial(coeffs: &[f64], x: f64) -> f64 {
     if coeffs.is_empty() {
         return 0.0;

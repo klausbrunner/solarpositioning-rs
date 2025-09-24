@@ -189,12 +189,6 @@ pub fn check_temperature(temperature: f64) -> Result<()> {
 
 /// Validates and normalizes an azimuth angle to the range [0, 360) degrees.
 ///
-/// # Arguments
-/// * `azimuth` - Azimuth angle in degrees
-///
-/// # Returns
-/// Normalized azimuth angle or error if invalid
-///
 /// # Errors
 /// Returns `ComputationError` if azimuth is not finite.
 pub fn check_azimuth(azimuth: f64) -> Result<f64> {
@@ -205,12 +199,6 @@ pub fn check_azimuth(azimuth: f64) -> Result<f64> {
 }
 
 /// Validates a zenith angle to be within the range [0, 180] degrees.
-///
-/// # Arguments
-/// * `zenith` - Zenith angle in degrees
-///
-/// # Returns
-/// The zenith angle if valid, or error if invalid
 ///
 /// # Errors
 /// Returns `ComputationError` if zenith angle is not finite or outside valid range.
@@ -227,13 +215,6 @@ pub fn check_zenith_angle(zenith: f64) -> Result<f64> {
 }
 
 /// Check if pressure and temperature parameters are usable for refraction correction.
-///
-/// # Arguments
-/// * `pressure` - Atmospheric pressure in millibars
-/// * `temperature` - Temperature in degrees Celsius
-///
-/// # Returns
-/// `true` if both parameters are finite and within reasonable ranges
 #[must_use]
 pub fn check_refraction_params_usable(pressure: f64, temperature: f64) -> bool {
     pressure.is_finite()

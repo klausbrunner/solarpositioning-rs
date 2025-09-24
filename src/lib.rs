@@ -1,12 +1,14 @@
 //! # Solar Positioning Library
 //!
 //! High-accuracy solar positioning algorithms for calculating sun position and sunrise/sunset times.
+
+#![cfg_attr(not(feature = "std"), no_std)]
 //!
 //! This library provides implementations of two complementary solar positioning algorithms:
-//! - **SPA** (Solar Position Algorithm): NREL's high-accuracy algorithm (±0.0003° uncertainty, years -2000 to 6000)
-//! - **Grena3**: Simplified algorithm (±0.01° accuracy, years 2010-2110, ~10x faster)
+//! - **SPA** (Solar Position Algorithm): NREL's high-accuracy algorithm (±0.0003°, years -2000 to 6000)
+//! - **Grena3**: Simplified algorithm (±0.01°, years 2010-2110, ~10x faster)
 //!
-//! In addition, it provides tools to compute Julian dates and estimate Delta T values.
+//! Supports both `std` (with chrono) and `no_std` (with libm) environments.
 //!
 //! ## References
 //!
@@ -19,12 +21,13 @@
 //!
 //! - Thread-safe, immutable data structures
 //! - Performance optimizations for coordinate sweeps (SPA only)
-//! - Comprehensive test suite with reference data validation
+//! - `no_std` support with `libm` feature (sunrise/sunset require `std`)
 //!
 //! ## Quick Start
 //!
-//! ### Solar Position
+//! ### Solar Position (with `std`)
 //! ```rust
+//! # #[cfg(feature = "std")] {
 //! use solar_positioning::{spa, RefractionCorrection, time::DeltaT};
 //! use chrono::{DateTime, FixedOffset};
 //!
@@ -41,10 +44,32 @@
 //!
 //! println!("Azimuth: {:.3}°", position.azimuth());
 //! println!("Elevation: {:.3}°", position.elevation_angle());
+//! # }
 //! ```
 //!
-//! ### Sunrise and Sunset
+//! ### Solar Position (`no_std` mode)
 //! ```rust
+//! use solar_positioning::{spa, time::JulianDate, RefractionCorrection};
+//!
+//! // Create Julian date from components (2026-06-21 12:00:00 UTC)
+//! let jd = JulianDate::from_utc(2026, 6, 21, 12, 0, 0.0, 69.0).unwrap();
+//!
+//! // Calculate sun position
+//! let position = spa::solar_position_from_julian(
+//!     jd,
+//!     48.21,   // Vienna latitude
+//!     16.37,   // Vienna longitude
+//!     190.0,   // elevation (meters)
+//!     Some(RefractionCorrection::standard())
+//! ).unwrap();
+//!
+//! println!("Azimuth: {:.3}°", position.azimuth());
+//! println!("Elevation: {:.3}°", position.elevation_angle());
+//! ```
+//!
+//! ### Sunrise and Sunset (requires `std`)
+//! ```rust
+//! # #[cfg(feature = "std")] {
 //! use solar_positioning::{spa, Horizon, time::DeltaT};
 //! use chrono::{DateTime, FixedOffset};
 //!
@@ -66,6 +91,7 @@
 //!     }
 //!     _ => println!("No sunrise/sunset (polar day/night)"),
 //! }
+//! # }
 //! ```
 //!
 //! ## Algorithms
@@ -87,7 +113,6 @@
 //! - **Zenith angle**: 0° = directly overhead (zenith), 90° = horizon (0° to 180°)
 //! - **Elevation angle**: 0° = horizon, 90° = directly overhead (-90° to +90°)
 
-#![cfg_attr(not(feature = "std"), no_std)]
 #![deny(missing_docs)]
 #![deny(unsafe_code)]
 #![warn(clippy::pedantic, clippy::nursery, clippy::cargo, clippy::all)]
@@ -102,7 +127,9 @@
 
 // Public API exports
 pub use crate::error::{Error, Result};
-pub use crate::spa::{SpaTimeDependent, spa_time_dependent_parts, spa_with_time_dependent_parts};
+#[cfg(feature = "std")]
+pub use crate::spa::spa_time_dependent_parts;
+pub use crate::spa::{SpaTimeDependent, spa_with_time_dependent_parts};
 pub use crate::types::{Horizon, RefractionCorrection, SolarPosition, SunriseResult};
 
 // Algorithm modules

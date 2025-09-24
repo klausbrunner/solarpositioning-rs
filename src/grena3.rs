@@ -1,9 +1,8 @@
-//! Grena3 solar position algorithm implementation.
+//! Grena3 algorithm implementation.
 //!
-//! This follows the no. 3 algorithm described by Roberto Grena of ENEA (2012).
+//! Implements algorithm #3 from Grena (2012).
 //!
-//! The algorithm is designed for the years 2010 to 2110, with a maximum error of 0.01 degrees.
-//! It's approximately 10x faster than the SPA algorithm but with reduced accuracy and time range.
+//! Designed for 2010-2110 with 0.01° accuracy. ~10x faster than SPA.
 //!
 //! Reference: Grena, R. (2012). Five new algorithms for the computation of sun position from 2010 to 2110.
 //! Solar Energy, 86(5), 1323-1337. DOI: <http://dx.doi.org/10.1016/j.solener.2012.01.024>
@@ -18,6 +17,7 @@ use crate::math::{
     sqrt, tan,
 };
 use crate::{RefractionCorrection, Result, SolarPosition};
+#[cfg(feature = "std")]
 use chrono::{DateTime, Datelike, TimeZone, Timelike};
 
 /// Calculate solar position using the Grena3 algorithm.
@@ -69,6 +69,7 @@ use chrono::{DateTime, Datelike, TimeZone, Timelike};
 /// println!("Azimuth: {:.3}°", position.azimuth());
 /// println!("Elevation: {:.3}°", position.elevation_angle());
 /// ```
+#[cfg(feature = "std")]
 #[allow(clippy::needless_pass_by_value)]
 pub fn solar_position<Tz: TimeZone>(
     datetime: DateTime<Tz>,
@@ -77,10 +78,36 @@ pub fn solar_position<Tz: TimeZone>(
     delta_t: f64,
     refraction: Option<RefractionCorrection>,
 ) -> Result<SolarPosition> {
-    check_coordinates(latitude, longitude)?;
-
     // Calculate t (days since 2000-01-01 12:00:00 TT)
     let t = calc_t(&datetime);
+    solar_position_from_t(t, latitude, longitude, delta_t, refraction)
+}
+
+/// Calculate solar position from time parameter t.
+///
+/// Core implementation for `no_std` compatibility.
+///
+/// # Arguments
+/// * `t` - Days since 2000-01-01 12:00:00 UT
+/// * `latitude` - Observer latitude in degrees (-90° to +90°)
+/// * `longitude` - Observer longitude in degrees (-180° to +180°)
+/// * `delta_t` - ΔT in seconds (difference between TT and UT1)
+/// * `refraction` - Optional atmospheric refraction correction
+///
+/// # Returns
+/// Returns `Ok(SolarPosition)` with azimuth and zenith angles on success.
+///
+/// # Errors
+/// Returns error for invalid coordinates.
+pub fn solar_position_from_t(
+    t: f64,
+    latitude: f64,
+    longitude: f64,
+    delta_t: f64,
+    refraction: Option<RefractionCorrection>,
+) -> Result<SolarPosition> {
+    check_coordinates(latitude, longitude)?;
+
     let t_e = t + 1.1574e-5 * delta_t;
     let omega_at_e = 0.0172019715 * t_e;
 
@@ -146,16 +173,25 @@ pub fn solar_position<Tz: TimeZone>(
     SolarPosition::new(azimuth, zenith)
 }
 
-/// Calculate t parameter (days since 2000-01-01 12:00:00 TT)
-fn calc_t<Tz: TimeZone>(datetime: &DateTime<Tz>) -> f64 {
-    // Convert to UTC for proper astronomical calculations
-    let utc_datetime = datetime.with_timezone(&chrono::Utc);
-    let mut m = i32::try_from(utc_datetime.month()).expect("month should fit in i32");
-    let mut y = utc_datetime.year();
-    let d = i32::try_from(utc_datetime.day()).expect("day should fit in i32");
-    let h = f64::from(utc_datetime.hour())
-        + f64::from(utc_datetime.minute()) / 60.0
-        + f64::from(utc_datetime.second()) / 3600.0;
+/// Calculate t parameter from date/time components (days since 2000-01-01 12:00:00 UT).
+///
+/// This is the core calculation that doesn't require chrono.
+///
+/// # Panics
+/// Panics if month or day values don't fit in i32 (extremely unlikely with valid dates).
+#[must_use]
+pub fn calc_t_from_components(
+    year: i32,
+    month: u32,
+    day: u32,
+    hour: u32,
+    minute: u32,
+    second: f64,
+) -> f64 {
+    let mut m = i32::try_from(month).expect("month should fit in i32");
+    let mut y = year;
+    let d = i32::try_from(day).expect("day should fit in i32");
+    let h = f64::from(hour) + f64::from(minute) / 60.0 + second / 3600.0;
 
     if m <= 2 {
         m += 12;
@@ -168,6 +204,21 @@ fn calc_t<Tz: TimeZone>(datetime: &DateTime<Tz>) -> f64 {
         + f64::from(d)
         + 0.0416667 * h
         - 21958.0
+}
+
+/// Calculate t parameter (days since 2000-01-01 12:00:00 TT)
+#[cfg(feature = "std")]
+fn calc_t<Tz: TimeZone>(datetime: &DateTime<Tz>) -> f64 {
+    // Convert to UTC for proper astronomical calculations
+    let utc_datetime = datetime.with_timezone(&chrono::Utc);
+    calc_t_from_components(
+        utc_datetime.year(),
+        utc_datetime.month(),
+        utc_datetime.day(),
+        utc_datetime.hour(),
+        utc_datetime.minute(),
+        f64::from(utc_datetime.second()) + f64::from(utc_datetime.nanosecond()) / 1e9,
+    )
 }
 
 #[cfg(test)]

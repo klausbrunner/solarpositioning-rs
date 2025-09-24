@@ -5,8 +5,7 @@ use crate::{Error, Result};
 
 /// Predefined elevation angles for sunrise/sunset calculations.
 ///
-/// These correspond to different definitions of twilight and allow for
-/// consistent calculations of sunrise, sunset, and twilight times.
+/// Corresponds to different twilight definitions for consistent sunrise, sunset, and twilight calculations.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Horizon {
     /// Standard sunrise/sunset (sun's upper limb touches horizon, accounting for refraction)
@@ -25,9 +24,6 @@ impl Horizon {
     /// Gets the elevation angle in degrees for this horizon definition.
     ///
     /// Negative values indicate the sun is below the horizon.
-    ///
-    /// # Returns
-    /// Elevation angle in degrees
     #[must_use]
     pub const fn elevation_angle(&self) -> f64 {
         match self {
@@ -41,12 +37,6 @@ impl Horizon {
 
     /// Creates a custom horizon with the specified elevation angle.
     ///
-    /// # Arguments
-    /// * `elevation_degrees` - Elevation angle in degrees (-90 to +90)
-    ///
-    /// # Returns
-    /// Custom horizon or error if angle is invalid
-    ///
     /// # Errors
     /// Returns `InvalidElevationAngle` if elevation is outside -90 to +90 degrees.
     pub fn custom(elevation_degrees: f64) -> Result<Self> {
@@ -59,8 +49,8 @@ impl Horizon {
 
 impl Eq for Horizon {}
 
-impl std::hash::Hash for Horizon {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+impl core::hash::Hash for Horizon {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         match self {
             Self::SunriseSunset => 0.hash(state),
             Self::CivilTwilight => 1.hash(state),
@@ -77,10 +67,8 @@ impl std::hash::Hash for Horizon {
 
 /// Atmospheric conditions for refraction correction in solar position calculations.
 ///
-/// When calculating solar positions, atmospheric refraction bends light rays,
-/// causing the apparent position of the sun to differ from its true geometric position.
-/// This is most noticeable near the horizon where refraction can shift the apparent
-/// position by up to ~0.6 degrees.
+/// Atmospheric refraction bends light rays, causing the apparent sun position to differ
+/// from its true geometric position by up to ~0.6° near the horizon.
 ///
 /// # Example
 /// ```
@@ -96,7 +84,6 @@ impl std::hash::Hash for Horizon {
 /// assert_eq!(custom.temperature(), -5.0);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct RefractionCorrection {
     /// Atmospheric pressure in millibars (hPa)
     pressure: f64,
@@ -106,13 +93,6 @@ pub struct RefractionCorrection {
 
 impl RefractionCorrection {
     /// Creates a new refraction correction with the specified atmospheric conditions.
-    ///
-    /// # Arguments
-    /// * `pressure` - Atmospheric pressure in millibars (1 to 2000 hPa)
-    /// * `temperature` - Temperature in degrees Celsius (-273.15 to 100°C)
-    ///
-    /// # Returns
-    /// Refraction correction or error if parameters are invalid
     ///
     /// # Errors
     /// Returns `InvalidPressure` or `InvalidTemperature` for out-of-range values.
@@ -139,9 +119,6 @@ impl RefractionCorrection {
     /// - Pressure: 1013.25 millibars (standard atmosphere)
     /// - Temperature: 15.0°C (59°F)
     ///
-    /// # Returns
-    /// Refraction correction with standard atmospheric conditions
-    ///
     /// # Example
     /// ```
     /// # use solar_positioning::types::RefractionCorrection;
@@ -158,18 +135,12 @@ impl RefractionCorrection {
     }
 
     /// Gets the atmospheric pressure in millibars.
-    ///
-    /// # Returns
-    /// Pressure in millibars (hPa)
     #[must_use]
     pub const fn pressure(&self) -> f64 {
         self.pressure
     }
 
     /// Gets the temperature in degrees Celsius.
-    ///
-    /// # Returns
-    /// Temperature in degrees Celsius
     #[must_use]
     pub const fn temperature(&self) -> f64 {
         self.temperature
@@ -184,7 +155,6 @@ impl RefractionCorrection {
 /// - Zenith angle: 0° = directly overhead (zenith), 90° = horizon, 180° = nadir
 /// - Elevation angle: 90° = directly overhead, 0° = horizon, -90° = nadir
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SolarPosition {
     /// Azimuth angle in degrees (0° to 360°, 0° = North, increasing clockwise)
     azimuth: f64,
@@ -194,13 +164,6 @@ pub struct SolarPosition {
 
 impl SolarPosition {
     /// Creates a new solar position from azimuth and zenith angle.
-    ///
-    /// # Arguments
-    /// * `azimuth` - Azimuth angle in degrees (will be normalized to 0-360°)
-    /// * `zenith_angle` - Zenith angle in degrees (must be 0-180°)
-    ///
-    /// # Returns
-    /// Solar position or error if zenith angle is invalid
     ///
     /// # Errors
     /// Returns error if azimuth or zenith angles are outside valid ranges.
@@ -223,19 +186,13 @@ impl SolarPosition {
         })
     }
 
-    /// Gets the azimuth angle in degrees.
-    ///
-    /// # Returns
-    /// Azimuth angle (0° to 360°, 0° = North, increasing clockwise)
+    /// Gets the azimuth angle in degrees (0° to 360°, 0° = North, increasing clockwise).
     #[must_use]
     pub const fn azimuth(&self) -> f64 {
         self.azimuth
     }
 
-    /// Gets the zenith angle in degrees.
-    ///
-    /// # Returns
-    /// Zenith angle (0° to 180°, 0° = zenith, 90° = horizon)
+    /// Gets the zenith angle in degrees (0° to 180°, 0° = zenith, 90° = horizon).
     #[must_use]
     pub const fn zenith_angle(&self) -> f64 {
         self.zenith_angle
@@ -243,28 +200,19 @@ impl SolarPosition {
 
     /// Gets the elevation angle in degrees.
     ///
-    /// This is the complement of the zenith angle: elevation = 90° - zenith
-    ///
-    /// # Returns
-    /// Elevation angle (-90° to 90°, 90° = zenith, 0° = horizon, -90° = nadir)
+    /// This is the complement of the zenith angle: elevation = 90° - zenith.
     #[must_use]
     pub fn elevation_angle(&self) -> f64 {
         90.0 - self.zenith_angle
     }
 
-    /// Checks if the sun is above the horizon.
-    ///
-    /// # Returns
-    /// `true` if elevation angle > 0°, `false` otherwise
+    /// Checks if the sun is above the horizon (elevation angle > 0°).
     #[must_use]
     pub fn is_sun_up(&self) -> bool {
         self.elevation_angle() > 0.0
     }
 
-    /// Checks if the sun is at or below the horizon.
-    ///
-    /// # Returns
-    /// `true` if elevation angle <= 0°, `false` otherwise
+    /// Checks if the sun is at or below the horizon (elevation angle ≤ 0°).
     #[must_use]
     pub fn is_sun_down(&self) -> bool {
         self.elevation_angle() <= 0.0
@@ -276,7 +224,6 @@ impl SolarPosition {
 /// Solar events can vary significantly based on location and time of year,
 /// especially at extreme latitudes where polar days and nights occur.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum SunriseResult<T = chrono::DateTime<chrono::Utc>> {
     /// Regular day with distinct sunrise, transit (noon), and sunset times
     RegularDay {
@@ -301,9 +248,6 @@ pub enum SunriseResult<T = chrono::DateTime<chrono::Utc>> {
 
 impl<T> SunriseResult<T> {
     /// Gets the transit time (solar noon) for any sunrise result.
-    ///
-    /// # Returns
-    /// Time when the sun crosses the meridian (solar noon)
     pub const fn transit(&self) -> &T {
         match self {
             Self::RegularDay { transit, .. }
@@ -313,33 +257,21 @@ impl<T> SunriseResult<T> {
     }
 
     /// Checks if this represents a regular day with sunrise and sunset.
-    ///
-    /// # Returns
-    /// `true` if this is a regular day, `false` for polar conditions
     pub const fn is_regular_day(&self) -> bool {
         matches!(self, Self::RegularDay { .. })
     }
 
     /// Checks if this represents a polar day (sun never sets).
-    ///
-    /// # Returns
-    /// `true` if sun remains above horizon all day
     pub const fn is_polar_day(&self) -> bool {
         matches!(self, Self::AllDay { .. })
     }
 
     /// Checks if this represents a polar night (sun never rises).
-    ///
-    /// # Returns
-    /// `true` if sun remains below horizon all day
     pub const fn is_polar_night(&self) -> bool {
         matches!(self, Self::AllNight { .. })
     }
 
     /// Gets sunrise time if this is a regular day.
-    ///
-    /// # Returns
-    /// `Some(sunrise)` for regular days, `None` for polar conditions
     pub const fn sunrise(&self) -> Option<&T> {
         if let Self::RegularDay { sunrise, .. } = self {
             Some(sunrise)
@@ -349,9 +281,6 @@ impl<T> SunriseResult<T> {
     }
 
     /// Gets sunset time if this is a regular day.
-    ///
-    /// # Returns
-    /// `Some(sunset)` for regular days, `None` for polar conditions
     pub const fn sunset(&self) -> Option<&T> {
         if let Self::RegularDay { sunset, .. } = self {
             Some(sunset)

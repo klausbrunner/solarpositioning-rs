@@ -14,8 +14,24 @@ env:
   RUSTFLAGS: -D warnings
 
 jobs:
+  quality:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v5
+    - uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        components: rustfmt, clippy
+    - uses: Swatinem/rust-cache@v2
+    - run: cargo fmt -- --check
+    - run: cargo clippy --all-targets --all-features -- -D clippy::correctness -D clippy::suspicious -D clippy::complexity -D clippy::perf -D clippy::style -A clippy::approx_constant -A clippy::needless_range_loop -A clippy::too_many_arguments -A clippy::unnecessary_wraps -A clippy::suboptimal_flops
+      env:
+        RUSTFLAGS: ""
+    - run: cargo doc --all-features --no-deps
+
   test:
     name: Test Suite
+    needs: quality
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
@@ -34,18 +50,3 @@ jobs:
     - uses: Swatinem/rust-cache@v2
     - run: cargo test --all-features
     - run: cargo test --doc
-
-  quality:
-    name: Code Quality
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v5
-    - uses: actions-rust-lang/setup-rust-toolchain@v1
-      with:
-        components: rustfmt, clippy
-    - uses: Swatinem/rust-cache@v2
-    - run: cargo fmt -- --check
-    - run: cargo clippy --all-targets --all-features -- -D clippy::correctness -D clippy::suspicious -D clippy::complexity -D clippy::perf -D clippy::style -A clippy::approx_constant -A clippy::needless_range_loop -A clippy::too_many_arguments -A clippy::unnecessary_wraps -A clippy::suboptimal_flops
-      env:
-        RUSTFLAGS: ""
-    - run: cargo doc --all-features --no-deps

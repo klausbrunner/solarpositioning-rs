@@ -1,6 +1,6 @@
 [package]
 name = "solar-positioning"
-version = "0.3.4"
+version = "0.3.5-dev"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT"

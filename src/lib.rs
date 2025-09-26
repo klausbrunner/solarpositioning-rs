@@ -8,6 +8,8 @@
 //! - **SPA** (Solar Position Algorithm): NREL's high-accuracy algorithm (±0.0003°, years -2000 to 6000)
 //! - **Grena3**: Simplified algorithm (±0.01°, years 2010-2110, ~10x faster)
 //!
+//! In addition, it provides an estimator for Delta T (ΔT) values based on the work of F. Espenak & J. Meeus.
+//!
 //! Supports both `std` (with chrono) and `no_std` (with libm) environments.
 //!
 //! ## References

@@ -4,9 +4,8 @@
 
 A Rust library for finding topocentric solar coordinates, i.e. the sun's position on the sky for a given date, latitude, and longitude (and other parameters), as well as times of sunrise, sunset and twilight. Calculations strictly follow well-known, peer-reviewed algorithms: [SPA](http://dx.doi.org/10.1016/j.solener.2003.12.003) by Reda and Andreas and, alternatively, [Grena/ENEA](http://dx.doi.org/10.1016/j.solener.2012.01.024) by Grena. More than 1000 test points are included to validate against the reference code and other sources.
 
-## Status
-
-This library is a port of the Java [solarpositioning](https://github.com/klausbrunner/solarpositioning) library to idiomatic Rust and produces identical results. Unlike the very mature Java project though, it should be considered in *beta* status for now.
+> [!NOTE]
+> This library is **not** based on or derived from code published by NREL, ENEA or other parties. It is an implementation precisely following the algorithms described in the respective papers.
 
 ## Usage
 

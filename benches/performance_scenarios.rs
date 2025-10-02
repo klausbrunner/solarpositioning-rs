@@ -1,6 +1,7 @@
 use chrono::{DateTime, Duration, Utc};
-use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use solar_positioning::{grena3, spa};
+use std::hint::black_box;
 
 /// Benchmark configuration for different usage patterns
 #[derive(Clone)]

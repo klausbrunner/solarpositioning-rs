@@ -1,7 +1,8 @@
 use chrono::{DateTime, Duration, Utc};
-use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use solar_positioning::spa;
 use std::collections::HashMap;
+use std::hint::black_box;
 
 fn benchmark_combined_patterns(c: &mut Criterion) {
     let mut group = c.benchmark_group("combined_patterns");

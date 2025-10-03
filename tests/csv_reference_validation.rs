@@ -5,7 +5,7 @@ use solar_positioning::{RefractionCorrection, grena3, spa};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 
-const EPSILON: f64 = 0.001; // Allow 0.001° deviation for floating-point differences
+const EPSILON: f64 = 0.0001; // Allow 0.0001° deviation for floating-point differences
 
 #[test]
 fn validate_spa_against_csv_reference_data() {

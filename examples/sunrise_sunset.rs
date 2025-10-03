@@ -1,6 +1,6 @@
 //! Sunrise/sunset calculation example with different twilight types across diverse global locations.
 
-use chrono::{DateTime, FixedOffset, NaiveDate, TimeZone, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use solar_positioning::{Horizon, spa, time::DeltaT, types::SunriseResult};
 
 #[derive(Debug)]
@@ -41,22 +41,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ];
 
     // Calculate for winter solstice - this shows the most extreme variations
-    // Demonstrate different timezone types:
-
-    // Option 1: UTC timezone
     let date_utc = Utc.with_ymd_and_hms(2023, 12, 21, 0, 0, 0).unwrap();
-
-    // Option 2: FixedOffset (keeping for comparison)
-    let _date_fixed = FixedOffset::east_opt(0)
-        .unwrap()
-        .from_local_datetime(
-            &NaiveDate::from_ymd_opt(2023, 12, 21)
-                .unwrap()
-                .and_hms_opt(0, 0, 0)
-                .unwrap(),
-        )
-        .unwrap();
-
     let delta_t = DeltaT::estimate_from_date(2023, 12)?;
 
     for city in &cities {
@@ -68,7 +53,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Date: December 21, 2023 (Winter Solstice)");
         println!();
 
-        // Use UTC timezone for calculations (both produce identical results)
         calculate_and_print_times(date_utc, city.latitude, city.longitude, delta_t)?;
         println!();
     }

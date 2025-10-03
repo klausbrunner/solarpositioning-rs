@@ -31,12 +31,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  Time: {:?}", spa_duration);
     println!();
 
-    // Grena3 calculation
+    // Grena3 calculation (without refraction for fair speed comparison)
     let start = Instant::now();
     let grena3_position = grena3::solar_position(datetime, latitude, longitude, delta_t, None)?;
     let grena3_duration = start.elapsed();
 
-    println!("Grena3 (Fast):");
+    println!("Grena3 (Fast, no refraction):");
     println!("  Azimuth: {:.6}°", grena3_position.azimuth());
     println!("  Elevation: {:.6}°", grena3_position.elevation_angle());
     println!("  Time: {:?}", grena3_duration);

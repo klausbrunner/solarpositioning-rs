@@ -34,12 +34,12 @@ pub fn normalize_degrees_0_to_360(degrees: f64) -> f64 {
 ///
 /// Coefficients are ordered [a₀, a₁, a₂, ...] for a₀ + a₁x + a₂x² + ...
 pub fn polynomial(coeffs: &[f64], x: f64) -> f64 {
-    if coeffs.is_empty() {
+    let Some(&last) = coeffs.last() else {
         return 0.0;
-    }
+    };
 
     // Horner's method: reverse iteration for numerical stability
-    let mut result = coeffs[coeffs.len() - 1];
+    let mut result = last;
     for &coeff in coeffs.iter().rev().skip(1) {
         result = result.mul_add(x, coeff);
     }

@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.5] - 2025-10-03
+
+### Changed
+
+- build, documentation, and test fixes
+
+## [0.3.4] - 2025-09-24
+
+### Added
+
+- feat: basic no_std support
+
 ## [0.3.3] - 2025-09-23
 
 ### Changed

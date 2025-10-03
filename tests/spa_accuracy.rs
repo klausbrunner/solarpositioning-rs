@@ -71,8 +71,7 @@ fn test_spa_accuracy_against_nrel_reference() -> Result<(), Box<dyn Error>> {
                 max_zenith_error = max_zenith_error.max(zenith_error);
 
                 // SPA should be accurate to ±0.0003 degrees according to NREL
-                // We'll use a more relaxed tolerance initially to debug any issues
-                let tolerance = 0.001; // 0.001 degrees = 3.6 arcseconds
+                let tolerance = 0.0001; // 0.0001 degrees for debugging output
 
                 if azimuth_error > tolerance || zenith_error > tolerance {
                     println!(

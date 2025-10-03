@@ -3,7 +3,7 @@
 use chrono::{DateTime, FixedOffset, TimeZone, Utc};
 use solar_positioning::{RefractionCorrection, spa};
 
-const EPSILON: f64 = 0.001; // Allow 0.001° deviation for floating-point differences
+const EPSILON: f64 = 0.0001; // Allow 0.0001° deviation for floating-point differences
 
 #[test]
 fn validate_against_nrel_reference_data() {

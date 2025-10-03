@@ -17,7 +17,7 @@ use crate::math::{
     sqrt, tan,
 };
 use crate::{RefractionCorrection, Result, SolarPosition};
-#[cfg(feature = "std")]
+#[cfg(feature = "chrono")]
 use chrono::{DateTime, Datelike, TimeZone, Timelike};
 
 /// Calculate solar position using the Grena3 algorithm.
@@ -69,7 +69,7 @@ use chrono::{DateTime, Datelike, TimeZone, Timelike};
 /// println!("Azimuth: {:.3}°", position.azimuth());
 /// println!("Elevation: {:.3}°", position.elevation_angle());
 /// ```
-#[cfg(feature = "std")]
+#[cfg(feature = "chrono")]
 #[allow(clippy::needless_pass_by_value)]
 pub fn solar_position<Tz: TimeZone>(
     datetime: DateTime<Tz>,
@@ -207,7 +207,7 @@ pub fn calc_t_from_components(
 }
 
 /// Calculate t parameter (days since 2000-01-01 12:00:00 TT)
-#[cfg(feature = "std")]
+#[cfg(feature = "chrono")]
 fn calc_t<Tz: TimeZone>(datetime: &DateTime<Tz>) -> f64 {
     // Convert to UTC for proper astronomical calculations
     let utc_datetime = datetime.with_timezone(&chrono::Utc);
@@ -221,7 +221,7 @@ fn calc_t<Tz: TimeZone>(datetime: &DateTime<Tz>) -> f64 {
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "chrono"))]
 mod tests {
     use super::*;
     use chrono::{DateTime, FixedOffset};

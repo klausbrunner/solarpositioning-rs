@@ -1,6 +1,6 @@
 [package]
 name = "solar-positioning"
-version = "0.3.5"
+version = "0.3.6-dev"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT"
@@ -21,18 +21,20 @@ exclude = [
 [dependencies]
 # Core dependencies
 thiserror = { version = "2.0", default-features = false }
-chrono = { version = "0.4", default-features = false, features = ["clock"] }
 
 # Optional dependencies
+chrono = { version = "0.4", default-features = false, optional = true }
 libm = { version = "0.2", optional = true }
 
 [dev-dependencies]
 criterion = { version = "0.7", features = ["html_reports"] }
 csv = "1.3"
+chrono = { version = "0.4", features = ["clock"] }
 
 [features]
-default = ["std"]
+default = ["std", "chrono"]
 std = []
+chrono = ["dep:chrono"]
 libm = ["dep:libm"]
 unstable = []
 

@@ -41,7 +41,7 @@ pub fn polynomial(coeffs: &[f64], x: f64) -> f64 {
     // Horner's method: reverse iteration for numerical stability
     let mut result = last;
     for &coeff in coeffs.iter().rev().skip(1) {
-        result = result.mul_add(x, coeff);
+        result = mul_add(result, x, coeff);
     }
     result
 }
@@ -134,6 +134,26 @@ pub fn floor(x: f64) -> f64 {
 
     #[cfg(not(feature = "std"))]
     return libm::floor(x);
+}
+
+/// Computes (x * a) + b with only one rounding error (fused multiply-add).
+#[inline]
+pub fn mul_add(x: f64, a: f64, b: f64) -> f64 {
+    #[cfg(feature = "std")]
+    return x.mul_add(a, b);
+
+    #[cfg(not(feature = "std"))]
+    return libm::fma(x, a, b);
+}
+
+/// Computes x^n for integer n.
+#[inline]
+pub fn powi(x: f64, n: i32) -> f64 {
+    #[cfg(feature = "std")]
+    return x.powi(n);
+
+    #[cfg(not(feature = "std"))]
+    return libm::pow(x, f64::from(n));
 }
 
 #[cfg(test)]

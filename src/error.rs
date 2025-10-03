@@ -278,6 +278,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "std")]
     fn test_error_display() {
         let err = Error::invalid_latitude(95.0);
         assert_eq!(

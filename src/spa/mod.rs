@@ -10,12 +10,14 @@
 #![allow(clippy::many_single_char_names)]
 #![allow(clippy::unreadable_literal)]
 
-#[cfg(feature = "std")]
+#[cfg(feature = "chrono")]
 use crate::Horizon;
 use crate::error::check_coordinates;
+#[cfg(feature = "chrono")]
+use crate::math::floor;
 use crate::math::{
-    acos, asin, atan, atan2, cos, degrees_to_radians, floor, normalize_degrees_0_to_360,
-    polynomial, radians_to_degrees, sin, tan,
+    acos, asin, atan, atan2, cos, degrees_to_radians, mul_add, normalize_degrees_0_to_360,
+    polynomial, powi, radians_to_degrees, sin, tan,
 };
 use crate::time::JulianDate;
 use crate::{RefractionCorrection, Result, SolarPosition};
@@ -25,7 +27,7 @@ use coefficients::{
     NUTATION_COEFFS, OBLIQUITY_COEFFS, TERMS_B, TERMS_L, TERMS_PE, TERMS_R, TERMS_Y,
 };
 
-#[cfg(feature = "std")]
+#[cfg(feature = "chrono")]
 use chrono::{DateTime, TimeZone};
 
 /// Standard sunrise/sunset elevation angle (accounts for refraction and sun's radius).
@@ -89,7 +91,7 @@ const SECONDS_PER_HOUR: f64 = 3600.0;
 /// println!("Azimuth: {:.3}°", position.azimuth());
 /// println!("Elevation: {:.3}°", position.elevation_angle());
 /// ```
-#[cfg(feature = "std")]
+#[cfg(feature = "chrono")]
 #[allow(clippy::needless_pass_by_value)]
 pub fn solar_position<Tz: TimeZone>(
     datetime: DateTime<Tz>,
@@ -191,7 +193,7 @@ fn calculate_lbr_terms(jme: f64, term_coeffs: &[&[&[f64; 3]]]) -> [f64; 6] {
     for (i, term_set) in term_coeffs.iter().enumerate().take(6) {
         let mut lbr_sum = 0.0;
         for term in *term_set {
-            lbr_sum += term[0] * cos(term[2].mul_add(jme, term[1]));
+            lbr_sum += term[0] * cos(mul_add(term[2], jme, term[1]));
         }
         lbr_terms[i] = lbr_sum;
     }
@@ -233,8 +235,8 @@ fn calculate_delta_psi_epsilon(jce: f64, x: &[f64]) -> DeltaPsiEpsilon {
         let xj_yterm_sum = degrees_to_radians(calculate_xj_yterm_sum(i, x));
 
         // Use Math.fma equivalent: a * b + c
-        let delta_psi_contrib = pe_term[1].mul_add(jce, pe_term[0]) * sin(xj_yterm_sum);
-        let delta_epsilon_contrib = pe_term[3].mul_add(jce, pe_term[2]) * cos(xj_yterm_sum);
+        let delta_psi_contrib = mul_add(pe_term[1], jce, pe_term[0]) * sin(xj_yterm_sum);
+        let delta_epsilon_contrib = mul_add(pe_term[3], jce, pe_term[2]) * cos(xj_yterm_sum);
 
         delta_psi += delta_psi_contrib;
         delta_epsilon += delta_epsilon_contrib;
@@ -267,12 +269,21 @@ fn calculate_apparent_sidereal_time_at_greenwich(
     delta_psi: f64,
     epsilon_degrees: f64,
 ) -> f64 {
-    let nu0_degrees = normalize_degrees_0_to_360(jd.julian_century().powi(2).mul_add(
+    let nu0_degrees = normalize_degrees_0_to_360(mul_add(
+        powi(jd.julian_century(), 2),
         0.000387933 - jd.julian_century() / 38710000.0,
-        360.98564736629f64.mul_add(jd.julian_date() - 2451545.0, 280.46061837),
+        mul_add(
+            360.98564736629f64,
+            jd.julian_date() - 2451545.0,
+            280.46061837,
+        ),
     ));
 
-    delta_psi.mul_add(cos(degrees_to_radians(epsilon_degrees)), nu0_degrees)
+    mul_add(
+        delta_psi,
+        cos(degrees_to_radians(epsilon_degrees)),
+        nu0_degrees,
+    )
 }
 
 /// Calculate geocentric sun right ascension.
@@ -282,7 +293,11 @@ fn calculate_geocentric_sun_right_ascension(
     lambda_rad: f64,
 ) -> f64 {
     let alpha = atan2(
-        sin(lambda_rad).mul_add(cos(epsilon_rad), -(tan(beta_rad) * sin(epsilon_rad))),
+        mul_add(
+            sin(lambda_rad),
+            cos(epsilon_rad),
+            -(tan(beta_rad) * sin(epsilon_rad)),
+        ),
         cos(lambda_rad),
     );
     normalize_degrees_0_to_360(radians_to_degrees(alpha))
@@ -290,7 +305,8 @@ fn calculate_geocentric_sun_right_ascension(
 
 /// Calculate geocentric sun declination.
 fn calculate_geocentric_sun_declination(beta_rad: f64, epsilon_rad: f64, lambda_rad: f64) -> f64 {
-    asin(sin(beta_rad).mul_add(
+    asin(mul_add(
+        sin(beta_rad),
         cos(epsilon_rad),
         cos(beta_rad) * sin(epsilon_rad) * sin(lambda_rad),
     ))
@@ -332,8 +348,7 @@ fn calculate_geocentric_sun_declination(beta_rad: f64, epsilon_rad: f64, lambda_
 ///     69.0,      // deltaT (seconds)
 ///     -0.833     // standard sunrise/sunset angle
 /// ).unwrap();
-/// ```
-#[cfg(feature = "std")]
+#[cfg(feature = "chrono")]
 #[allow(clippy::needless_pass_by_value)]
 pub fn sunrise_sunset<Tz: TimeZone>(
     date: DateTime<Tz>,
@@ -351,7 +366,7 @@ pub fn sunrise_sunset<Tz: TimeZone>(
 }
 
 /// Calculate sunrise/sunset times using NREL SPA algorithm Appendix A.2
-#[cfg(feature = "std")]
+#[cfg(feature = "chrono")]
 fn calculate_sunrise_sunset_spa_algorithm<Tz: TimeZone>(
     day: DateTime<Tz>,
     latitude: f64,
@@ -410,10 +425,8 @@ fn calculate_sunrise_sunset_spa_algorithm<Tz: TimeZone>(
         None => Ok(final_result),
     }
 }
-
-/// A.2.1. Calculate apparent sidereal time and nutation parameters
+#[cfg(feature = "chrono")]
 #[allow(clippy::needless_pass_by_value)]
-#[cfg(feature = "std")]
 fn calculate_sidereal_time_and_nutation<Tz: TimeZone>(
     day_start: DateTime<Tz>,
 ) -> (f64, DeltaPsiEpsilon, f64) {
@@ -431,9 +444,8 @@ fn calculate_sidereal_time_and_nutation<Tz: TimeZone>(
     (nu_degrees, delta_psi_epsilon, epsilon_degrees)
 }
 
-/// A.2.2. Calculate alpha/delta for day before, same day, and next day
+#[cfg(feature = "chrono")]
 #[allow(clippy::needless_pass_by_value)]
-#[cfg(feature = "std")]
 fn calculate_alpha_deltas_for_three_days<Tz: TimeZone>(
     day_start: DateTime<Tz>,
     delta_psi_epsilon: DeltaPsiEpsilon,
@@ -452,8 +464,13 @@ fn calculate_alpha_deltas_for_three_days<Tz: TimeZone>(
     Ok(alpha_deltas)
 }
 
+// ============================================================================
+// Sunrise/sunset helper functions below
+// All marked #[cfg(feature = "chrono")] as they're only used by chrono-based APIs
+// ============================================================================
+
 /// Enum for polar condition types
-#[cfg(feature = "std")]
+#[cfg(feature = "chrono")]
 #[derive(Debug, Clone, Copy)]
 enum PolarType {
     AllDay,
@@ -461,7 +478,7 @@ enum PolarType {
 }
 
 /// Check for polar day/night conditions and return the type
-#[cfg(feature = "std")]
+#[cfg(feature = "chrono")]
 fn check_polar_conditions_type(
     latitude: f64,
     elevation_angle: f64,
@@ -472,7 +489,7 @@ fn check_polar_conditions_type(
     let delta1_rad = degrees_to_radians(delta1);
 
     let acos_arg =
-        sin(phi).mul_add(-sin(delta1_rad), sin(elevation_rad)) / (cos(phi) * cos(delta1_rad));
+        mul_add(sin(phi), -sin(delta1_rad), sin(elevation_rad)) / (cos(phi) * cos(delta1_rad));
 
     if acos_arg < -1.0 {
         Some(PolarType::AllDay)
@@ -484,7 +501,7 @@ fn check_polar_conditions_type(
 }
 
 /// Check for polar day/night conditions and construct `SunriseResult`
-#[cfg(feature = "std")]
+#[cfg(feature = "chrono")]
 fn check_polar_conditions<Tz: TimeZone>(
     day: DateTime<Tz>,
     m0: f64,
@@ -502,6 +519,7 @@ fn check_polar_conditions<Tz: TimeZone>(
 }
 
 /// A.2.5-6. Calculate approximate times for transit, sunrise, sunset
+#[cfg(feature = "chrono")]
 fn calculate_approximate_times(
     m0: f64,
     latitude: f64,
@@ -513,7 +531,7 @@ fn calculate_approximate_times(
     let elevation_rad = degrees_to_radians(elevation_angle);
 
     let acos_arg =
-        sin(phi).mul_add(-sin(delta1_rad), sin(elevation_rad)) / (cos(phi) * cos(delta1_rad));
+        mul_add(sin(phi), -sin(delta1_rad), sin(elevation_rad)) / (cos(phi) * cos(delta1_rad));
     let h0 = acos(acos_arg);
     let h0_degrees = radians_to_degrees(h0).min(180.0);
 
@@ -526,14 +544,14 @@ fn calculate_approximate_times(
 }
 
 /// A.2.8-15. Calculate final accurate times using corrections
-#[cfg(feature = "std")]
+#[cfg(feature = "chrono")]
 fn calculate_final_times<Tz: TimeZone>(
     params: FinalTimeParams<Tz>,
 ) -> crate::SunriseResult<DateTime<Tz>> {
     // A.2.8. Calculate sidereal times
     let mut nu = [0.0; 3];
     for (i, nu_item) in nu.iter_mut().enumerate() {
-        *nu_item = 360.985647f64.mul_add(params.m_values[i], params.nu_degrees);
+        *nu_item = mul_add(360.985647f64, params.m_values[i], params.nu_degrees);
     }
 
     // A.2.9. Calculate terms with deltaT correction
@@ -557,7 +575,8 @@ fn calculate_final_times<Tz: TimeZone>(
     let mut h = [0.0; 3];
     for i in 0..3 {
         let delta_prime_rad = degrees_to_radians(alpha_delta_primes[i].delta);
-        h[i] = radians_to_degrees(asin(sin(phi).mul_add(
+        h[i] = radians_to_degrees(asin(mul_add(
+            sin(phi),
             sin(delta_prime_rad),
             cos(phi) * cos(delta_prime_rad) * cos(degrees_to_radians(h_prime[i])),
         )));
@@ -590,6 +609,7 @@ fn calculate_final_times<Tz: TimeZone>(
 }
 
 /// A.2.10. Calculate interpolated alpha/delta values
+#[cfg(feature = "chrono")]
 fn calculate_interpolated_alpha_deltas(
     alpha_deltas: &[AlphaDelta; 3],
     n: &[f64; 3],
@@ -609,13 +629,14 @@ fn calculate_interpolated_alpha_deltas(
     }; 3];
     for i in 0..3 {
         alpha_delta_primes[i].alpha =
-            alpha_deltas[1].alpha + (n[i] * (c.mul_add(n[i], a + b))) / 2.0;
+            alpha_deltas[1].alpha + (n[i] * (mul_add(c, n[i], a + b))) / 2.0;
         alpha_delta_primes[i].delta =
-            alpha_deltas[1].delta + (n[i] * (c_prime.mul_add(n[i], a_prime + b_prime))) / 2.0;
+            alpha_deltas[1].delta + (n[i] * (mul_add(c_prime, n[i], a_prime + b_prime))) / 2.0;
     }
     alpha_delta_primes
 }
 
+#[cfg(feature = "chrono")]
 #[derive(Debug, Clone, Copy)]
 struct AlphaDelta {
     alpha: f64,
@@ -623,8 +644,8 @@ struct AlphaDelta {
 }
 
 /// Parameters for calculating final sunrise/sunset times
-#[cfg(feature = "std")]
 #[derive(Debug, Clone)]
+#[cfg(feature = "chrono")]
 struct FinalTimeParams<Tz: TimeZone> {
     day: DateTime<Tz>,
     m_values: [f64; 3],
@@ -673,7 +694,7 @@ struct FinalTimeParams<Tz: TimeZone> {
 ///     date, 37.7749, -122.4194, 69.0, Horizon::CivilTwilight
 /// ).unwrap();
 /// ```
-#[cfg(feature = "std")]
+#[cfg(feature = "chrono")]
 pub fn sunrise_sunset_for_horizon<Tz: TimeZone>(
     date: DateTime<Tz>,
     latitude: f64,
@@ -692,6 +713,7 @@ pub fn sunrise_sunset_for_horizon<Tz: TimeZone>(
 
 /// Calculate alpha (right ascension) and delta (declination) for a given JME using full SPA algorithm
 /// Following NREL SPA Algorithm Section 3.2-3.8 for sunrise/sunset calculations
+#[cfg(feature = "chrono")]
 fn calculate_alpha_delta(jme: f64, delta_psi: f64, epsilon_degrees: f64) -> AlphaDelta {
     // Follow Java calculateAlphaDelta exactly
 
@@ -738,9 +760,10 @@ fn calculate_alpha_delta(jme: f64, delta_psi: f64, epsilon_degrees: f64) -> Alph
 }
 
 /// Normalize value to [0, 1) range using the same logic as the removed `limit_to` function
+#[cfg(feature = "chrono")]
 fn normalize_to_unit_range(val: f64) -> f64 {
     let divided = val;
-    let limited = divided - divided.floor();
+    let limited = divided - floor(divided);
     if limited < 0.0 {
         limited + 1.0
     } else {
@@ -748,7 +771,7 @@ fn normalize_to_unit_range(val: f64) -> f64 {
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "chrono")]
 fn truncate_to_day_start<Tz: TimeZone>(datetime: &DateTime<Tz>) -> DateTime<Tz> {
     datetime
         .timezone()
@@ -762,8 +785,8 @@ fn truncate_to_day_start<Tz: TimeZone>(datetime: &DateTime<Tz>) -> DateTime<Tz> 
         .expect("midnight should have single timezone representation")
 }
 
+#[cfg(feature = "chrono")]
 #[allow(clippy::needless_pass_by_value)]
-#[cfg(feature = "std")]
 fn add_fraction_of_day<Tz: TimeZone>(day: DateTime<Tz>, fraction: f64) -> DateTime<Tz> {
     // Match Java implementation exactly:
     // 1. Truncate to start of day (like Java's truncatedTo(ChronoUnit.DAYS))
@@ -778,6 +801,7 @@ fn add_fraction_of_day<Tz: TimeZone>(day: DateTime<Tz>, fraction: f64) -> DateTi
 }
 
 /// Limit to 0..1 if absolute value > 2 (Java limitIfNecessary)
+#[cfg(feature = "chrono")]
 fn limit_if_necessary(val: f64) -> f64 {
     if val.abs() > 2.0 {
         normalize_to_unit_range(val)
@@ -787,6 +811,7 @@ fn limit_if_necessary(val: f64) -> f64 {
 }
 
 /// Limit H' values according to A.2.11
+#[cfg(feature = "chrono")]
 fn limit_h_prime(h_prime: f64) -> f64 {
     let normalized = h_prime / 360.0;
     let limited = 360.0 * (normalized - floor(normalized));
@@ -848,7 +873,7 @@ fn limit_h_prime(h_prime: f64) -> f64 {
 /// # Ok(())
 /// # }
 /// ```
-#[cfg(feature = "std")]
+#[cfg(feature = "chrono")]
 pub fn sunrise_sunset_multiple<Tz, H>(
     date: DateTime<Tz>,
     latitude: f64,
@@ -889,8 +914,7 @@ where
         Err(e) => Err(e.clone()),
     })
 }
-
-#[cfg(feature = "std")]
+#[cfg(feature = "chrono")]
 #[allow(clippy::needless_pass_by_value)]
 fn calculate_sunrise_sunset_spa_algorithm_with_precomputed<Tz: TimeZone>(
     day: DateTime<Tz>,
@@ -969,8 +993,7 @@ fn calculate_sunrise_sunset_spa_algorithm_with_precomputed<Tz: TimeZone>(
 /// Returns error if Julian date calculation fails for the provided datetime
 ///
 /// # Panics
-/// May panic if Earth's radius vector is zero (astronomical impossibility)
-#[cfg(feature = "std")]
+#[cfg(feature = "chrono")]
 #[allow(clippy::needless_pass_by_value)]
 pub fn spa_time_dependent_parts<Tz: TimeZone>(
     datetime: DateTime<Tz>,
@@ -1122,24 +1145,29 @@ pub fn spa_with_time_dependent_parts(
     let delta = degrees_to_radians(time_dependent.delta_degrees);
 
     let u = atan(EARTH_FLATTENING_FACTOR * tan(phi));
-    let y = EARTH_FLATTENING_FACTOR.mul_add(sin(u), (elevation / EARTH_RADIUS_METERS) * sin(phi));
-    let x = (elevation / EARTH_RADIUS_METERS).mul_add(cos(phi), cos(u));
+    let y = mul_add(
+        EARTH_FLATTENING_FACTOR,
+        sin(u),
+        (elevation / EARTH_RADIUS_METERS) * sin(phi),
+    );
+    let x = mul_add(elevation / EARTH_RADIUS_METERS, cos(phi), cos(u));
 
     let delta_alpha_prime_degrees = radians_to_degrees(atan2(
         -x * sin(xi) * sin(h),
-        (x * sin(xi)).mul_add(-cos(h), cos(delta)),
+        mul_add(x * sin(xi), -cos(h), cos(delta)),
     ));
 
     let delta_prime = radians_to_degrees(atan2(
-        y.mul_add(-sin(xi), sin(delta)) * cos(degrees_to_radians(delta_alpha_prime_degrees)),
-        (x * sin(xi)).mul_add(-cos(h), cos(delta)),
+        mul_add(y, -sin(xi), sin(delta)) * cos(degrees_to_radians(delta_alpha_prime_degrees)),
+        mul_add(x * sin(xi), -cos(h), cos(delta)),
     ));
 
     // 3.12. Calculate the topocentric local hour angle, H' (in degrees)
     let h_prime_degrees = h_degrees - delta_alpha_prime_degrees;
 
     // 3.13. Calculate the topocentric zenith and azimuth angles
-    let zenith_angle = radians_to_degrees(acos(sin(degrees_to_radians(latitude)).mul_add(
+    let zenith_angle = radians_to_degrees(acos(mul_add(
+        sin(degrees_to_radians(latitude)),
         sin(degrees_to_radians(delta_prime)),
         cos(degrees_to_radians(latitude))
             * cos(degrees_to_radians(delta_prime))
@@ -1177,10 +1205,11 @@ pub fn spa_with_time_dependent_parts(
     SolarPosition::new(azimuth, final_zenith)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "chrono", feature = "std"))]
 mod tests {
     use super::*;
     use chrono::{DateTime, FixedOffset};
+    use std::collections::HashSet;
 
     #[test]
     fn test_spa_basic_functionality() {
@@ -1214,7 +1243,7 @@ mod tests {
             Horizon::NauticalTwilight,
         ];
 
-        let results: std::result::Result<Vec<_>, _> = sunrise_sunset_multiple(
+        let results: Result<Vec<_>> = sunrise_sunset_multiple(
             datetime,
             37.7749,   // San Francisco latitude
             -122.4194, // San Francisco longitude
@@ -1229,8 +1258,7 @@ mod tests {
         assert_eq!(results.len(), 3);
 
         // Check that we have all expected horizons
-        let returned_horizons: std::collections::HashSet<_> =
-            results.iter().map(|(h, _)| *h).collect();
+        let returned_horizons: HashSet<_> = results.iter().map(|(h, _)| *h).collect();
         for expected_horizon in horizons {
             assert!(returned_horizons.contains(&expected_horizon));
         }

@@ -5,12 +5,38 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 //!
 //! This library provides implementations of two complementary solar positioning algorithms:
-//! - **SPA** (Solar Position Algorithm): NREL's high-accuracy algorithm (±0.0003°, years -2000 to 6000)
+//! - **SPA** (Solar Position Algorithm): NREL's authoritative algorithm (±0.0003°, years -2000 to 6000)
 //! - **Grena3**: Simplified algorithm (±0.01°, years 2010-2110, ~10x faster)
 //!
 //! In addition, it provides an estimator for Delta T (ΔT) values based on the work of F. Espenak & J. Meeus.
 //!
-//! Supports both `std` (with chrono) and `no_std` (with libm) environments.
+//! ## Features
+//!
+//! - Multiple configurations: `std` or `no_std`, with or without `chrono`, math via native or `libm`
+//! - Maximum accuracy: Authentic NREL SPA implementation, validated against reference data
+//! - Performance optimized: Split functions for bulk calculations (SPA only)
+//! - Thread-safe: Stateless, immutable data structures
+//!
+//! ## Feature Flags
+//!
+//! - `std` (default): Use standard library for native math functions (usually faster than `libm`)
+//! - `chrono` (default): Enable `DateTime<Tz>` based convenience API
+//! - `libm`: Use pure Rust math for `no_std` environments
+//!
+//! **Configuration examples:**
+//! ```toml
+//! # Default: std + chrono (most convenient)
+//! solar-positioning = "0.3"
+//!
+//! # Minimal std (no chrono, smallest dependency tree)
+//! solar-positioning = { version = "0.3", default-features = false, features = ["std"] }
+//!
+//! # no_std + chrono (embedded with DateTime support)
+//! solar-positioning = { version = "0.3", default-features = false, features = ["libm", "chrono"] }
+//!
+//! # Minimal no_std (pure numeric API)
+//! solar-positioning = { version = "0.3", default-features = false, features = ["libm"] }
+//! ```
 //!
 //! ## References
 //!
@@ -19,17 +45,11 @@
 //! - Grena, R. (2012). Five new algorithms for the computation of sun position from 2010 to 2110.
 //!   Solar Energy, 86(5), 1323-1337. DOI: <http://dx.doi.org/10.1016/j.solener.2012.01.024>
 //!
-//! ## Features
-//!
-//! - Thread-safe, immutable data structures
-//! - Performance optimizations for coordinate sweeps (SPA only)
-//! - `no_std` support with `libm` feature (sunrise/sunset require `std`)
-//!
 //! ## Quick Start
 //!
-//! ### Solar Position (with `std`)
+//! ### Solar Position (with chrono)
 //! ```rust
-//! # #[cfg(feature = "std")] {
+//! # #[cfg(feature = "chrono")] {
 //! use solar_positioning::{spa, RefractionCorrection, time::DeltaT};
 //! use chrono::{DateTime, FixedOffset};
 //!
@@ -49,14 +69,14 @@
 //! # }
 //! ```
 //!
-//! ### Solar Position (`no_std` mode)
+//! ### Solar Position (numeric API, no chrono)
 //! ```rust
 //! use solar_positioning::{spa, time::JulianDate, RefractionCorrection};
 //!
-//! // Create Julian date from components (2026-06-21 12:00:00 UTC)
+//! // Create Julian date from UTC components (2026-06-21 12:00:00 UTC + 69s ΔT)
 //! let jd = JulianDate::from_utc(2026, 6, 21, 12, 0, 0.0, 69.0).unwrap();
 //!
-//! // Calculate sun position
+//! // Calculate sun position (works in both std and no_std)
 //! let position = spa::solar_position_from_julian(
 //!     jd,
 //!     48.21,   // Vienna latitude
@@ -69,9 +89,9 @@
 //! println!("Elevation: {:.3}°", position.elevation_angle());
 //! ```
 //!
-//! ### Sunrise and Sunset (requires `std`)
+//! ### Sunrise and Sunset (requires chrono)
 //! ```rust
-//! # #[cfg(feature = "std")] {
+//! # #[cfg(feature = "chrono")] {
 //! use solar_positioning::{spa, Horizon, time::DeltaT};
 //! use chrono::{DateTime, FixedOffset};
 //!
@@ -129,7 +149,7 @@
 
 // Public API exports
 pub use crate::error::{Error, Result};
-#[cfg(feature = "std")]
+#[cfg(feature = "chrono")]
 pub use crate::spa::spa_time_dependent_parts;
 pub use crate::spa::{SpaTimeDependent, spa_with_time_dependent_parts};
 pub use crate::types::{Horizon, RefractionCorrection, SolarPosition, SunriseResult};
@@ -148,14 +168,13 @@ mod math;
 // Public modules
 pub mod time;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "chrono"))]
 mod tests {
     use super::*;
+    use chrono::{DateTime, FixedOffset, TimeZone, Utc};
 
     #[test]
     fn test_basic_spa_calculation() {
-        use chrono::{DateTime, FixedOffset, TimeZone, Utc};
-
         // Test with different timezone types
         let datetime_fixed = "2023-06-21T12:00:00-07:00"
             .parse::<DateTime<FixedOffset>>()

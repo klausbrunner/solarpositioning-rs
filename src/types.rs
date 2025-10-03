@@ -224,7 +224,11 @@ impl SolarPosition {
 /// Solar events can vary significantly based on location and time of year,
 /// especially at extreme latitudes where polar days and nights occur.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SunriseResult<T = chrono::DateTime<chrono::Utc>> {
+#[cfg_attr(
+    feature = "std",
+    doc = "Default generic parameter is `chrono::DateTime<chrono::Utc>` when `std` feature is enabled."
+)]
+pub enum SunriseResult<T = ()> {
     /// Regular day with distinct sunrise, transit (noon), and sunset times
     RegularDay {
         /// Time of sunrise

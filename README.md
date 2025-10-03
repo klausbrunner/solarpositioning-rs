@@ -15,7 +15,13 @@ cargo add solar-positioning
 
 ### Requirements
 
-Rust 1.85 or newer. Minimal dependencies (chrono for date/time, thiserror for errors). Supports `no_std` with `libm` feature.
+Rust 1.85+. Minimal dependencies. Supports `std` (default) and `no_std` with `libm`.
+
+**Feature flags:**
+
+- `std` (default): Standard library, native math
+- `chrono` (default): `DateTime` API (disable for pure numeric `JulianDate` API)
+- `libm`: `no_std` support
 
 ### Code
 
@@ -40,110 +46,72 @@ println!("Azimuth: {:.1}°, Elevation: {:.1}°",
     position.azimuth(), position.elevation_angle());
 ```
 
-For better performance when calculating positions for many coordinates at the same time, you can use the split functions to avoid recalculating time-dependent values:
+Without `chrono`, use the numeric `JulianDate` API:
 
 ```rust
-use solar_positioning::spa;
+use solar_positioning::{spa, time::JulianDate, RefractionCorrection};
 
-let datetime = "2025-06-21T12:00:00+02:00".parse().unwrap();
+let jd = JulianDate::from_utc(2025, 6, 21, 12, 0, 0.0, 69.0).unwrap();
+let position = spa::solar_position_from_julian(
+    jd, 48.21, 16.37, 190.0, Some(RefractionCorrection::standard())
+).unwrap();
+```
 
-// Calculate time-dependent parts once
+For multiple coordinates at the same time, calculate time-dependent parts once (SPA only):
+
+```rust
 let time_dependent = spa::spa_time_dependent_parts(datetime, 69.0).unwrap();
-
-// Reuse for multiple coordinates
-for (lat, lon) in [(48.21, 16.37), (52.52, 13.40), (45.46, 9.19)] {
-    let position = spa::spa_with_time_dependent_parts(
-        lat, lon, 0.0, None, &time_dependent
-    ).unwrap();
-    println!("{:.1}, {:.1}: {:.1}°", lat, lon, position.azimuth());
+for (lat, lon) in [(48.21, 16.37), (52.52, 13.40)] {
+    let pos = spa::spa_with_time_dependent_parts(lat, lon, 0.0, None, &time_dependent).unwrap();
 }
 ```
 
-The `spa` module includes functions to calculate the times of sunrise, sun transit, and sunset in one fell swoop. The actual return type depends on the type of day (regular day, polar day, polar night).
+Calculate sunrise, transit, and sunset (return type depends on day type: regular/polar day/polar night):
 
 ```rust
-use chrono::{DateTime, FixedOffset};
 use solar_positioning::{spa, types::SunriseResult, Horizon, time::DeltaT};
 
-// Northern location (Tromsø, Norway) in local time
-let datetime = "2025-06-21T00:00:00+02:00".parse::<DateTime<FixedOffset>>().unwrap();
-
+let datetime = "2025-06-21T00:00:00+02:00".parse().unwrap();
 let result = spa::sunrise_sunset_for_horizon(
-    datetime,
-    69.65, // latitude
-    18.96, // longitude
-    DeltaT::estimate_from_date_like(datetime).unwrap(), // delta T
+    datetime, 69.65, 18.96,
+    DeltaT::estimate_from_date_like(datetime).unwrap(),
     Horizon::SunriseSunset
 ).unwrap();
 
 match result {
-    SunriseResult::RegularDay { sunrise, transit, sunset } => {
-        println!("Sunrise: {}, Transit: {}, Sunset: {}", sunrise, transit, sunset);
-    }
-    _ => {
-        println!("no sunrise or sunset today!");
-    }
+    SunriseResult::RegularDay { sunrise, transit, sunset } => { /* ... */ }
+    _ => { /* polar day/night */ }
 }
 ```
 
-Twilight start and end times can be obtained like sunrise and sunset, but assuming a different horizon:
-
-```rust
-use chrono::{DateTime, FixedOffset};
-use solar_positioning::{spa, Horizon, time::DeltaT};
-
-let datetime = "2025-06-21T00:00:00+02:00".parse::<DateTime<FixedOffset>>().unwrap();
-
-let result = spa::sunrise_sunset_for_horizon(
-    datetime,
-    70.978, // latitude
-    25.974, // longitude
-    DeltaT::estimate_from_date_like(datetime).unwrap(), // delta T
-    Horizon::CivilTwilight
-).unwrap();
-```
-
-See the documentation for more functions.
+For twilight, use `Horizon::CivilTwilight`, `Horizon::NauticalTwilight`, or `Horizon::AstronomicalTwilight`.
 
 ### Examples
 
-The library includes several examples demonstrating different use cases:
-
 ```bash
-# Basic solar position calculation
-cargo run --example basic_usage
-
-# Sunrise/sunset with different twilight types
-cargo run --example sunrise_sunset
-
-# Compare SPA vs Grena3 algorithms
-cargo run --example grena3_comparison
+cargo run --example basic_usage          # Solar position
+cargo run --example sunrise_sunset       # Sunrise/sunset/twilight
+cargo run --example grena3_comparison    # SPA vs Grena3
 ```
 
-### Which position algorithm should I use?
+### Which algorithm?
 
-* For many applications, `grena3` should work just fine. It's simple, fast, and pretty accurate for a time window from 2010 to 2110 CE.
-* If you're looking for maximum accuracy or need to calculate for historic dates, use `spa`. It's widely considered a reference algorithm for solar positioning, being very accurate and usable in a very large time window.
+- `spa`: Maximum accuracy, reference algorithm, works for historic dates
+- `grena3`: Simple, very fast, often accurate enough (2010-2110 CE timeframe)
 
-While `grena3` is about an order of magnitude faster than `spa`, both algorithms are very fast in absolute terms. The performance difference will only matter for bulk calculations (e.g. for many locations or times).
+Both are fast in absolute terms. The ~10× speed difference only matters for bulk calculations.
 
-### Notes on sunrise, sunset, and twilight
+### Sunrise/sunset accuracy notes
 
-* Calculation is based on the usual correction of 0.833° on the zenith angle, i.e. sunrise and sunset are assumed to occur when the center of the solar disc is 50 arc-minutes below the horizon. While commonly used, this fixed value fails to account for the varying effects of atmospheric refraction. Calculated and apparent sunrise and sunset times may easily differ by several minutes (cf. [Wilson 2018](https://doi.org/10.37099/mtu.dc.etdr/697)).
-* As a general note on accuracy, Jean Meeus advises that "giving rising or setting times .. more accurately than to the nearest minute makes no sense" (_Astronomical Algorithms_). Errors increase the farther the position from the equator, i.e. values for polar regions are much less reliable.
-* The SPA sunset/sunrise algorithm is one of the most accurate ones around. Results of this implementation correspond very closely to the [NOAA calculator](http://www.esrl.noaa.gov/gmd/grad/solcalc/)'s.
+- Uses standard 0.833° correction (solar disc 50 arc-minutes below horizon). Atmospheric refraction varies, so calculated times may differ from observed by several minutes ([Wilson 2018](https://doi.org/10.37099/mtu.dc.etdr/697)).
+- Jean Meeus advises giving times "more accurately than to the nearest minute makes no sense". Errors increase toward poles.
+- Results match the [NOAA calculator](http://www.esrl.noaa.gov/gmd/grad/solcalc/) closely.
 
-### What's this "delta T" thing?
+### Delta T
 
-See [Wikipedia](https://en.wikipedia.org/wiki/ΔT_(timekeeping)) for an explanation. For many simple applications, and particularly for sunrise and sunset, this value could be negligible as it's just over a minute (about 70 seconds as of 2025). However, if you're looking for maximum accuracy, you should use an observed value (available from e.g. the US Naval Observatory) or at least a solid estimate.
+Delta T (ΔT) is the difference between terrestrial time and UT1 ([Wikipedia](https://en.wikipedia.org/wiki/ΔT_(timekeeping))). For many applications it's negligible (~70 seconds in 2025). For maximum accuracy, use observed values (available from US Naval Observatory) or estimates.
 
-The `time::DeltaT` type provides an estimator based on polynomials fitting a number of observed (or extrapolated) historical values, published by [Espenak and Meeus](http://eclipse.gsfc.nasa.gov/SEcat5/deltatpoly.html) in 2007 and slightly updated by [Espenak](https://www.eclipsewise.com/help/deltatpoly2014.html) in 2014.
-
-As of September 2025, extrapolated values from this estimator are slightly high (about 2 seconds). This gap will widen in the coming decades (cf. [Morrison et al. 2021](https://royalsocietypublishing.org/doi/10.1098/rspa.2020.0776)). Still, the estimates should work sufficiently well for most applications.
-
-### Is it thread-safe?
-
-Yes. All functions are stateless and safe to call concurrently.
+The `time::DeltaT` estimator uses polynomial fits from [Espenak and Meeus](http://eclipse.gsfc.nasa.gov/SEcat5/deltatpoly.html) (2007, updated 2014). Current extrapolated values are slightly high (~2 seconds). This gap will widen ([Morrison et al. 2021](https://royalsocietypublishing.org/doi/10.1098/rspa.2020.0776)). However, this should not matter for most applications.
 
 ## License
 

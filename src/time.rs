@@ -8,7 +8,7 @@
 
 use crate::math::{floor, polynomial};
 use crate::{Error, Result};
-#[cfg(feature = "std")]
+#[cfg(feature = "chrono")]
 use chrono::{Datelike, TimeZone, Timelike};
 
 /// Seconds per day (86,400)
@@ -46,7 +46,7 @@ impl JulianDate {
     ///
     /// # Errors
     /// Returns error if the date/time components are invalid (e.g., invalid month, day, hour).
-    #[cfg(feature = "std")]
+    #[cfg(feature = "chrono")]
     pub fn from_datetime<Tz: TimeZone>(
         datetime: &chrono::DateTime<Tz>,
         delta_t: f64,
@@ -208,7 +208,8 @@ impl JulianDate {
     }
 
     /// Add days to the Julian date (like Java constructor: new `JulianDate(jd.julianDate()` + i - 1, 0))
-    pub(crate) fn add_days(self, days: f64) -> Self {
+    #[cfg(feature = "chrono")]
+    pub(crate) const fn add_days(self, days: f64) -> Self {
         Self {
             jd: self.jd + days,
             delta_t: self.delta_t,
@@ -451,8 +452,7 @@ impl DeltaT {
     /// let date = NaiveDate::from_ymd_opt(2024, 6, 21).unwrap();
     /// let delta_t2 = DeltaT::estimate_from_date_like(date).unwrap();
     /// assert_eq!(delta_t, delta_t2);
-    /// ```
-    #[cfg(feature = "std")]
+    #[cfg(feature = "chrono")]
     #[allow(clippy::needless_pass_by_value)]
     pub fn estimate_from_date_like<D: Datelike>(date: D) -> Result<f64> {
         Self::estimate_from_date(date.year(), date.month())
@@ -572,7 +572,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "std")]
     fn test_delta_t_from_date_like() {
         use chrono::{DateTime, FixedOffset, NaiveDate, Utc};
 

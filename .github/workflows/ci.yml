@@ -2,7 +2,6 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
   pull_request:
     branches: [ main ]
 
@@ -50,3 +49,26 @@ jobs:
     - uses: Swatinem/rust-cache@v2
     - run: cargo test --all-features
     - run: cargo test --doc
+
+  features:
+    name: Feature Combinations
+    needs: quality
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - features: "--no-default-features --features std"
+            test: false
+          - features: "--no-default-features --features libm"
+            test: false
+          - features: "--no-default-features --features 'std,chrono'"
+            test: true
+          - features: "--no-default-features --features 'libm,chrono'"
+            test: true
+    steps:
+    - uses: actions/checkout@v5
+    - uses: actions-rust-lang/setup-rust-toolchain@v1
+    - uses: Swatinem/rust-cache@v2
+    - run: cargo check ${{ matrix.features }}
+    - if: matrix.test
+      run: cargo test --lib ${{ matrix.features }}

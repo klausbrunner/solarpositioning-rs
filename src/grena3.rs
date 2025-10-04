@@ -13,8 +13,8 @@
 
 use crate::error::check_coordinates;
 use crate::math::{
-    PI, asin, atan2, cos, degrees_to_radians, normalize_degrees_0_to_360, radians_to_degrees, sin,
-    sqrt, tan,
+    asin, atan2, cos, degrees_to_radians, normalize_degrees_0_to_360, radians_to_degrees, sin,
+    sqrt, tan, PI,
 };
 use crate::{RefractionCorrection, Result, SolarPosition};
 #[cfg(feature = "chrono")]

@@ -1,8 +1,8 @@
 [package]
 name = "solar-positioning"
-version = "0.3.6-dev"
-edition = "2024"
-rust-version = "1.85"
+version = "0.3.6"
+edition = "2021"
+rust-version = "1.70"
 license = "MIT"
 description = "High-accuracy solar positioning algorithms (SPA and Grena3) for calculating sun position and sunrise/sunset/twilight times"
 homepage = "https://github.com/klausbrunner/solarpositioning-rs"

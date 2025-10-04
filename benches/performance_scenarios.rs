@@ -1,5 +1,5 @@
 use chrono::{DateTime, Duration, Utc};
-use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use solar_positioning::{grena3, spa};
 use std::hint::black_box;
 

@@ -3,7 +3,7 @@
 //! This shows how to use the library in no_std environments where
 //! users handle their own time conversions.
 
-use solar_positioning::{RefractionCorrection, grena3, spa, time::JulianDate};
+use solar_positioning::{grena3, spa, time::JulianDate, RefractionCorrection};
 
 fn main() {
     // Example: Calculate solar position for 2024-06-21 12:00:00 UTC

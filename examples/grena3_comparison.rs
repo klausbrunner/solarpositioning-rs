@@ -1,7 +1,7 @@
 //! Compare SPA and Grena3 algorithms for speed vs accuracy trade-offs.
 
 use chrono::{DateTime, FixedOffset};
-use solar_positioning::{RefractionCorrection, grena3, spa, time::DeltaT};
+use solar_positioning::{grena3, spa, time::DeltaT, RefractionCorrection};
 use std::time::Instant;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

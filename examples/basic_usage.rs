@@ -1,7 +1,7 @@
 //! Basic solar position calculation example.
 
 use chrono::{DateTime, FixedOffset, TimeZone, Utc};
-use solar_positioning::{RefractionCorrection, spa, time::DeltaT};
+use solar_positioning::{spa, time::DeltaT, RefractionCorrection};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Example 1: Calculate solar position using FixedOffset timezone

@@ -2,7 +2,7 @@
 
 use chrono::{DateTime, FixedOffset, TimeZone, Utc};
 use csv::ReaderBuilder;
-use solar_positioning::{RefractionCorrection, spa};
+use solar_positioning::{spa, RefractionCorrection};
 use std::error::Error;
 use std::fs::File;
 

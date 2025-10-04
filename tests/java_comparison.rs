@@ -1,7 +1,7 @@
 //! Test to compare results with the Java implementation.
 
 use chrono::{DateTime, FixedOffset, TimeZone, Utc};
-use solar_positioning::{RefractionCorrection, spa};
+use solar_positioning::{spa, RefractionCorrection};
 
 #[test]
 fn test_compare_with_java_spa() {

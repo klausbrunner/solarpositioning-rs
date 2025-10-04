@@ -209,7 +209,7 @@ impl JulianDate {
 
     /// Add days to the Julian date (like Java constructor: new `JulianDate(jd.julianDate()` + i - 1, 0))
     #[cfg(feature = "chrono")]
-    pub(crate) const fn add_days(self, days: f64) -> Self {
+    pub(crate) fn add_days(self, days: f64) -> Self {
         Self {
             jd: self.jd + days,
             delta_t: self.delta_t,

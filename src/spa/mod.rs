@@ -10,8 +10,6 @@
 #![allow(clippy::many_single_char_names)]
 #![allow(clippy::unreadable_literal)]
 
-#[cfg(feature = "chrono")]
-use crate::Horizon;
 use crate::error::check_coordinates;
 #[cfg(feature = "chrono")]
 use crate::math::floor;
@@ -20,6 +18,8 @@ use crate::math::{
     polynomial, powi, radians_to_degrees, sin, tan,
 };
 use crate::time::JulianDate;
+#[cfg(feature = "chrono")]
+use crate::Horizon;
 use crate::{RefractionCorrection, Result, SolarPosition};
 
 pub mod coefficients;
@@ -1322,30 +1322,26 @@ mod tests {
             .unwrap();
 
         // Invalid latitude
-        assert!(
-            solar_position(
-                datetime,
-                95.0,
-                0.0,
-                0.0,
-                0.0,
-                Some(RefractionCorrection::new(1013.25, 15.0).unwrap())
-            )
-            .is_err()
-        );
+        assert!(solar_position(
+            datetime,
+            95.0,
+            0.0,
+            0.0,
+            0.0,
+            Some(RefractionCorrection::new(1013.25, 15.0).unwrap())
+        )
+        .is_err());
 
         // Invalid longitude
-        assert!(
-            solar_position(
-                datetime,
-                0.0,
-                185.0,
-                0.0,
-                0.0,
-                Some(RefractionCorrection::new(1013.25, 15.0).unwrap())
-            )
-            .is_err()
-        );
+        assert!(solar_position(
+            datetime,
+            0.0,
+            185.0,
+            0.0,
+            0.0,
+            Some(RefractionCorrection::new(1013.25, 15.0).unwrap())
+        )
+        .is_err());
     }
 
     #[test]

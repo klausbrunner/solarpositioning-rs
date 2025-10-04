@@ -10,13 +10,13 @@ pub const PI: f64 = core::f64::consts::PI;
 
 /// Converts degrees to radians.
 #[inline]
-pub const fn degrees_to_radians(degrees: f64) -> f64 {
+pub fn degrees_to_radians(degrees: f64) -> f64 {
     degrees.to_radians()
 }
 
 /// Converts radians to degrees.
 #[inline]
-pub const fn radians_to_degrees(radians: f64) -> f64 {
+pub fn radians_to_degrees(radians: f64) -> f64 {
     radians.to_degrees()
 }
 

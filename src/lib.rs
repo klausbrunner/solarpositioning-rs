@@ -145,13 +145,14 @@
     clippy::cargo_common_metadata,
     clippy::multiple_crate_versions, // Acceptable for dev-dependencies
     clippy::float_cmp, // Exact comparisons of mathematical constants in tests
+    clippy::incompatible_msrv, // Functions work fine in 1.70, const context only needs 1.85+
 )]
 
 // Public API exports
 pub use crate::error::{Error, Result};
 #[cfg(feature = "chrono")]
 pub use crate::spa::spa_time_dependent_parts;
-pub use crate::spa::{SpaTimeDependent, spa_with_time_dependent_parts};
+pub use crate::spa::{spa_with_time_dependent_parts, SpaTimeDependent};
 pub use crate::types::{Horizon, RefractionCorrection, SolarPosition, SunriseResult};
 
 // Algorithm modules

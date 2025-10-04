@@ -1,7 +1,7 @@
 //! Validate SPA implementation against NREL reference data.
 
 use chrono::{DateTime, FixedOffset, TimeZone, Utc};
-use solar_positioning::{RefractionCorrection, spa};
+use solar_positioning::{spa, RefractionCorrection};
 
 const EPSILON: f64 = 0.0001; // Allow 0.0001° deviation for floating-point differences
 

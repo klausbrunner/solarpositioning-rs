@@ -1,7 +1,7 @@
 //! Comprehensive validation against the same CSV reference data used in the Java version.
 
 use chrono::{DateTime, FixedOffset, TimeZone, Utc};
-use solar_positioning::{RefractionCorrection, grena3, spa};
+use solar_positioning::{grena3, spa, RefractionCorrection};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 

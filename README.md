@@ -15,7 +15,7 @@ cargo add solar-positioning
 
 ### Requirements
 
-Rust 1.85+. Minimal dependencies. Supports `std` (default) and `no_std` with `libm`.
+Rust 1.70+. Minimal dependencies. Supports `std` (default) and `no_std` with `libm`.
 
 **Feature flags:**
 

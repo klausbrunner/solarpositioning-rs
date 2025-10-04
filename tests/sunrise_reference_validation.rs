@@ -2,7 +2,7 @@
 
 use chrono::{DateTime, FixedOffset, TimeZone, Timelike, Utc};
 use csv::ReaderBuilder;
-use solar_positioning::{RefractionCorrection, spa, types::SunriseResult};
+use solar_positioning::{spa, types::SunriseResult, RefractionCorrection};
 use std::error::Error;
 use std::fs::File;
 
@@ -238,7 +238,7 @@ fn test_sunrise_sunset_against_spa_reference_data() -> Result<(), Box<dyn Error>
                         // Different tolerances for different calculations:
                         // Transit times should be most accurate (sun at meridian, minimal atmospheric effects)
                         let transit_tolerance = 1.0; // 1 second for transit
-                        // Sunrise/sunset have more atmospheric uncertainty at horizon
+                                                     // Sunrise/sunset have more atmospheric uncertainty at horizon
                         let horizon_tolerance = 120.0; // 2 minutes for sunrise/sunset
 
                         if sunrise_error > horizon_tolerance

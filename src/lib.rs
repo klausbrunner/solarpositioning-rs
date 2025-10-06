@@ -150,7 +150,7 @@
 
 // Public API exports - core types only
 pub use crate::error::{Error, Result};
-pub use crate::types::{Horizon, RefractionCorrection, SolarPosition, SunriseResult};
+pub use crate::types::{Horizon, HoursUtc, RefractionCorrection, SolarPosition, SunriseResult};
 
 // Algorithm modules
 pub mod grena3;

@@ -219,6 +219,70 @@ impl SolarPosition {
     }
 }
 
+/// Hours since midnight UTC that can extend beyond a single day.
+///
+/// Used for sunrise/sunset times without the chrono dependency.
+/// Values represent hours since midnight UTC (0 UT) for the calculation date:
+/// - Negative values indicate the previous day
+/// - 0.0 to < 24.0 indicates the current day
+/// - ≥ 24.0 indicates the next day
+///
+/// # Example
+/// ```
+/// # use solar_positioning::types::HoursUtc;
+/// let morning = HoursUtc::from_hours(6.5); // 06:30 current day
+/// let late_evening = HoursUtc::from_hours(23.5); // 23:30 current day
+/// let after_midnight = HoursUtc::from_hours(24.5); // 00:30 next day
+/// let before_midnight_prev = HoursUtc::from_hours(-0.5); // 23:30 previous day
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct HoursUtc(f64);
+
+impl HoursUtc {
+    /// Creates a new `HoursUtc` from hours since midnight UTC.
+    ///
+    /// Values can be negative (previous day) or ≥ 24.0 (next day).
+    #[must_use]
+    pub const fn from_hours(hours: f64) -> Self {
+        Self(hours)
+    }
+
+    /// Gets the raw hours value.
+    ///
+    /// Can be negative (previous day) or ≥ 24.0 (next day).
+    #[must_use]
+    pub const fn hours(&self) -> f64 {
+        self.0
+    }
+
+    /// Gets the day offset (-1, 0, or 1) and normalized hours (0.0 to < 24.0).
+    ///
+    /// # Returns
+    /// Tuple of (`day_offset`, `hours_in_day`) where:
+    /// - `day_offset`: -1 = previous day, 0 = current day, 1 = next day
+    /// - `hours_in_day`: 0.0 to < 24.0
+    ///
+    /// # Example
+    /// ```
+    /// # use solar_positioning::types::HoursUtc;
+    /// let time = HoursUtc::from_hours(25.5);
+    /// let (day_offset, hours) = time.day_and_hours();
+    /// assert_eq!(day_offset, 1);
+    /// assert!((hours - 1.5).abs() < 1e-10);
+    /// ```
+    #[must_use]
+    pub fn day_and_hours(&self) -> (i32, f64) {
+        let hours = self.0;
+        if hours < 0.0 {
+            (-1, hours + 24.0)
+        } else if hours >= 24.0 {
+            (1, hours - 24.0)
+        } else {
+            (0, hours)
+        }
+    }
+}
+
 /// Result of sunrise/sunset calculations for a given day.
 ///
 /// Solar events can vary significantly based on location and time of year,

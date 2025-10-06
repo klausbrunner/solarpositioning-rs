@@ -11,10 +11,8 @@
 #![allow(clippy::unreadable_literal)]
 
 use crate::error::check_coordinates;
-#[cfg(feature = "chrono")]
-use crate::math::floor;
 use crate::math::{
-    acos, asin, atan, atan2, cos, degrees_to_radians, mul_add, normalize_degrees_0_to_360,
+    acos, asin, atan, atan2, cos, degrees_to_radians, floor, mul_add, normalize_degrees_0_to_360,
     polynomial, powi, radians_to_degrees, sin, tan,
 };
 use crate::time::JulianDate;
@@ -312,6 +310,124 @@ fn calculate_geocentric_sun_declination(beta_rad: f64, epsilon_rad: f64, lambda_
     ))
 }
 
+/// Calculate sunrise/sunset times without chrono dependency.
+///
+/// Returns times as hours since midnight UTC (0.0 to 24.0+) for the given date.
+/// Hours can extend beyond 24.0 (next day) or be negative (previous day).
+///
+/// This follows the NREL SPA algorithm (Reda & Andreas 2003, Appendix A.2).
+///
+/// # Arguments
+/// * `year` - Year (can be negative for BCE)
+/// * `month` - Month (1-12)
+/// * `day` - Day of month (1-31)
+/// * `latitude` - Observer latitude in degrees (-90 to +90)
+/// * `longitude` - Observer longitude in degrees (-180 to +180)
+/// * `delta_t` - ΔT in seconds (difference between TT and UT1)
+/// * `elevation_angle` - Sun elevation angle for sunrise/sunset in degrees (typically -0.833°)
+///
+/// # Returns
+/// `SunriseResult<HoursUtc>` with times as hours since midnight UTC
+///
+/// # Errors
+/// Returns error for invalid date components or coordinates
+///
+/// # Example
+/// ```
+/// use solar_positioning::{spa, HoursUtc};
+///
+/// let result = spa::sunrise_sunset_utc(
+///     2023, 6, 21,   // June 21, 2023
+///     37.7749,       // San Francisco latitude
+///     -122.4194,     // San Francisco longitude
+///     69.0,          // deltaT (seconds)
+///     -0.833         // standard sunrise/sunset angle
+/// ).unwrap();
+///
+/// if let solar_positioning::SunriseResult::RegularDay { sunrise, transit, sunset } = result {
+///     println!("Sunrise: {:.2} hours UTC", sunrise.hours());
+///     println!("Transit: {:.2} hours UTC", transit.hours());
+///     println!("Sunset: {:.2} hours UTC", sunset.hours());
+/// }
+/// ```
+pub fn sunrise_sunset_utc(
+    year: i32,
+    month: u32,
+    day: u32,
+    latitude: f64,
+    longitude: f64,
+    delta_t: f64,
+    elevation_angle: f64,
+) -> Result<crate::SunriseResult<crate::HoursUtc>> {
+    check_coordinates(latitude, longitude)?;
+
+    // Create Julian date for midnight UTC (0 UT) of the given date
+    let jd_midnight = JulianDate::from_utc(year, month, day, 0, 0, 0.0, 0.0)?;
+
+    // Calculate sunrise/sunset using core algorithm
+    calculate_sunrise_sunset_core(jd_midnight, latitude, longitude, delta_t, elevation_angle)
+}
+
+/// Calculate sunrise, solar transit, and sunset times for a specific horizon type.
+///
+/// This is a convenience function that uses predefined elevation angles for common
+/// sunrise/twilight calculations without requiring the chrono library.
+///
+/// # Arguments
+/// * `year` - Year (e.g., 2023)
+/// * `month` - Month (1-12)
+/// * `day` - Day of month (1-31)
+/// * `latitude` - Observer latitude in degrees (-90 to +90)
+/// * `longitude` - Observer longitude in degrees (-180 to +180)
+/// * `delta_t` - ΔT in seconds (difference between TT and UT1)
+/// * `horizon` - Horizon type (sunrise/sunset, civil twilight, etc.)
+///
+/// # Returns
+/// `SunriseResult<HoursUtc>` with times as hours since midnight UTC
+///
+/// # Errors
+/// Returns error for invalid coordinates, dates, or computation failures.
+///
+/// # Example
+/// ```rust
+/// use solar_positioning::{spa, Horizon};
+///
+/// // Standard sunrise/sunset
+/// let result = spa::sunrise_sunset_utc_for_horizon(
+///     2023, 6, 21,
+///     37.7749,   // San Francisco latitude
+///     -122.4194, // San Francisco longitude
+///     69.0,      // deltaT (seconds)
+///     Horizon::SunriseSunset
+/// ).unwrap();
+///
+/// // Civil twilight
+/// let twilight = spa::sunrise_sunset_utc_for_horizon(
+///     2023, 6, 21,
+///     37.7749, -122.4194, 69.0,
+///     Horizon::CivilTwilight
+/// ).unwrap();
+/// ```
+pub fn sunrise_sunset_utc_for_horizon(
+    year: i32,
+    month: u32,
+    day: u32,
+    latitude: f64,
+    longitude: f64,
+    delta_t: f64,
+    horizon: crate::Horizon,
+) -> Result<crate::SunriseResult<crate::HoursUtc>> {
+    sunrise_sunset_utc(
+        year,
+        month,
+        day,
+        latitude,
+        longitude,
+        delta_t,
+        horizon.elevation_angle(),
+    )
+}
+
 /// Calculate sunrise, solar transit, and sunset times using the SPA algorithm.
 ///
 /// This follows the NREL SPA algorithm (Reda & Andreas 2003) for calculating
@@ -363,6 +479,83 @@ pub fn sunrise_sunset<Tz: TimeZone>(
 
     // Implement the complete algorithm in one place for accuracy
     calculate_sunrise_sunset_spa_algorithm(day_start, latitude, longitude, delta_t, elevation_angle)
+}
+
+/// Core sunrise/sunset calculation that returns times as fractions of day.
+///
+/// This is the shared implementation used by both chrono and non-chrono APIs.
+#[allow(clippy::unnecessary_wraps)]
+fn calculate_sunrise_sunset_core(
+    jd_midnight: JulianDate,
+    latitude: f64,
+    longitude: f64,
+    delta_t: f64,
+    elevation_angle: f64,
+) -> Result<crate::SunriseResult<crate::HoursUtc>> {
+    // A.2.1. Calculate the apparent sidereal time at Greenwich at 0 UT
+    let jce_day = jd_midnight.julian_ephemeris_century();
+    let x_terms = calculate_nutation_terms(jce_day);
+    let delta_psi_epsilon = calculate_delta_psi_epsilon(jce_day, &x_terms);
+    let epsilon_degrees =
+        calculate_true_obliquity_of_ecliptic(&jd_midnight, delta_psi_epsilon.delta_epsilon);
+    let nu_degrees = calculate_apparent_sidereal_time_at_greenwich(
+        &jd_midnight,
+        delta_psi_epsilon.delta_psi,
+        epsilon_degrees,
+    );
+
+    // A.2.2. Calculate alpha/delta for day before, same day, next day
+    let mut alpha_deltas = [AlphaDelta {
+        alpha: 0.0,
+        delta: 0.0,
+    }; 3];
+    for (i, alpha_delta) in alpha_deltas.iter_mut().enumerate() {
+        let current_jd = jd_midnight.add_days((i as f64) - 1.0);
+        let current_jme = current_jd.julian_ephemeris_millennium();
+        let ad = calculate_alpha_delta(current_jme, delta_psi_epsilon.delta_psi, epsilon_degrees);
+        *alpha_delta = ad;
+    }
+
+    // Calculate initial transit time and check for polar conditions
+    let m0 = (alpha_deltas[1].alpha - longitude - nu_degrees) / 360.0;
+
+    // Check for polar conditions but don't return early - need to calculate accurate transit
+    let polar_type = check_polar_conditions_type(latitude, elevation_angle, alpha_deltas[1].delta);
+
+    // Calculate approximate times and apply corrections (needed for accurate transit time)
+    let (m_values, _h0_degrees) =
+        calculate_approximate_times(m0, latitude, elevation_angle, alpha_deltas[1].delta);
+
+    // Apply final corrections to get accurate times (as fractions of day)
+    let (t_frac, r_frac, s_frac) = calculate_final_time_fractions(
+        m_values,
+        nu_degrees,
+        delta_t,
+        latitude,
+        longitude,
+        elevation_angle,
+        alpha_deltas,
+    );
+
+    // Convert fractions to hours (0-24+, can be negative or > 24)
+    let transit_hours = crate::HoursUtc::from_hours(t_frac * 24.0);
+    let sunrise_hours = crate::HoursUtc::from_hours(r_frac * 24.0);
+    let sunset_hours = crate::HoursUtc::from_hours(s_frac * 24.0);
+
+    // Return appropriate result type based on polar conditions
+    match polar_type {
+        Some(PolarType::AllDay) => Ok(crate::SunriseResult::AllDay {
+            transit: transit_hours,
+        }),
+        Some(PolarType::AllNight) => Ok(crate::SunriseResult::AllNight {
+            transit: transit_hours,
+        }),
+        None => Ok(crate::SunriseResult::RegularDay {
+            sunrise: sunrise_hours,
+            transit: transit_hours,
+            sunset: sunset_hours,
+        }),
+    }
 }
 
 /// Calculate sunrise/sunset times using NREL SPA algorithm Appendix A.2
@@ -466,11 +659,10 @@ fn calculate_alpha_deltas_for_three_days<Tz: TimeZone>(
 
 // ============================================================================
 // Sunrise/sunset helper functions below
-// All marked #[cfg(feature = "chrono")] as they're only used by chrono-based APIs
+// Core functions work without chrono, chrono-specific wrappers separate
 // ============================================================================
 
 /// Enum for polar condition types
-#[cfg(feature = "chrono")]
 #[derive(Debug, Clone, Copy)]
 enum PolarType {
     AllDay,
@@ -478,7 +670,6 @@ enum PolarType {
 }
 
 /// Check for polar day/night conditions and return the type
-#[cfg(feature = "chrono")]
 fn check_polar_conditions_type(
     latitude: f64,
     elevation_angle: f64,
@@ -519,7 +710,6 @@ fn check_polar_conditions<Tz: TimeZone>(
 }
 
 /// A.2.5-6. Calculate approximate times for transit, sunrise, sunset
-#[cfg(feature = "chrono")]
 fn calculate_approximate_times(
     m0: f64,
     latitude: f64,
@@ -541,6 +731,69 @@ fn calculate_approximate_times(
     m[2] = normalize_to_unit_range(m0 + h0_degrees / 360.0);
 
     (m, h0_degrees)
+}
+
+/// A.2.8-15. Calculate final accurate time fractions using corrections
+/// Returns (`transit_frac`, `sunrise_frac`, `sunset_frac`) as fractions of day
+fn calculate_final_time_fractions(
+    m_values: [f64; 3],
+    nu_degrees: f64,
+    delta_t: f64,
+    latitude: f64,
+    longitude: f64,
+    elevation_angle: f64,
+    alpha_deltas: [AlphaDelta; 3],
+) -> (f64, f64, f64) {
+    // A.2.8. Calculate sidereal times
+    let mut nu = [0.0; 3];
+    for (i, nu_item) in nu.iter_mut().enumerate() {
+        *nu_item = mul_add(360.985647f64, m_values[i], nu_degrees);
+    }
+
+    // A.2.9. Calculate terms with deltaT correction
+    let mut n = [0.0; 3];
+    for (i, n_item) in n.iter_mut().enumerate() {
+        *n_item = m_values[i] + delta_t / 86400.0;
+    }
+
+    // A.2.10. Calculate α'i and δ'i using interpolation
+    let alpha_delta_primes = calculate_interpolated_alpha_deltas(&alpha_deltas, &n);
+
+    // A.2.11. Calculate local hour angles
+    let mut h_prime = [0.0; 3];
+    for i in 0..3 {
+        let h_prime_i = nu[i] + longitude - alpha_delta_primes[i].alpha;
+        h_prime[i] = limit_h_prime(h_prime_i);
+    }
+
+    // A.2.12. Calculate sun altitudes
+    let phi = degrees_to_radians(latitude);
+    let mut h = [0.0; 3];
+    for i in 0..3 {
+        let delta_prime_rad = degrees_to_radians(alpha_delta_primes[i].delta);
+        h[i] = radians_to_degrees(asin(mul_add(
+            sin(phi),
+            sin(delta_prime_rad),
+            cos(phi) * cos(delta_prime_rad) * cos(degrees_to_radians(h_prime[i])),
+        )));
+    }
+
+    // A.2.13-15. Calculate final times as fractions
+    let t = m_values[0] - h_prime[0] / 360.0;
+    let r = m_values[1]
+        + (h[1] - elevation_angle)
+            / (360.0
+                * cos(degrees_to_radians(alpha_delta_primes[1].delta))
+                * cos(phi)
+                * sin(degrees_to_radians(h_prime[1])));
+    let s = m_values[2]
+        + (h[2] - elevation_angle)
+            / (360.0
+                * cos(degrees_to_radians(alpha_delta_primes[2].delta))
+                * cos(phi)
+                * sin(degrees_to_radians(h_prime[2])));
+
+    (t, r, s)
 }
 
 /// A.2.8-15. Calculate final accurate times using corrections
@@ -609,7 +862,6 @@ fn calculate_final_times<Tz: TimeZone>(
 }
 
 /// A.2.10. Calculate interpolated alpha/delta values
-#[cfg(feature = "chrono")]
 fn calculate_interpolated_alpha_deltas(
     alpha_deltas: &[AlphaDelta; 3],
     n: &[f64; 3],
@@ -636,7 +888,6 @@ fn calculate_interpolated_alpha_deltas(
     alpha_delta_primes
 }
 
-#[cfg(feature = "chrono")]
 #[derive(Debug, Clone, Copy)]
 struct AlphaDelta {
     alpha: f64,
@@ -713,7 +964,6 @@ pub fn sunrise_sunset_for_horizon<Tz: TimeZone>(
 
 /// Calculate alpha (right ascension) and delta (declination) for a given JME using full SPA algorithm
 /// Following NREL SPA Algorithm Section 3.2-3.8 for sunrise/sunset calculations
-#[cfg(feature = "chrono")]
 fn calculate_alpha_delta(jme: f64, delta_psi: f64, epsilon_degrees: f64) -> AlphaDelta {
     // Follow Java calculateAlphaDelta exactly
 
@@ -760,7 +1010,6 @@ fn calculate_alpha_delta(jme: f64, delta_psi: f64, epsilon_degrees: f64) -> Alph
 }
 
 /// Normalize value to [0, 1) range using the same logic as the removed `limit_to` function
-#[cfg(feature = "chrono")]
 fn normalize_to_unit_range(val: f64) -> f64 {
     let divided = val;
     let limited = divided - floor(divided);
@@ -801,7 +1050,6 @@ fn add_fraction_of_day<Tz: TimeZone>(day: DateTime<Tz>, fraction: f64) -> DateTi
 }
 
 /// Limit to 0..1 if absolute value > 2 (Java limitIfNecessary)
-#[cfg(feature = "chrono")]
 fn limit_if_necessary(val: f64) -> f64 {
     if val.abs() > 2.0 {
         normalize_to_unit_range(val)
@@ -811,7 +1059,6 @@ fn limit_if_necessary(val: f64) -> f64 {
 }
 
 /// Limit H' values according to A.2.11
-#[cfg(feature = "chrono")]
 fn limit_h_prime(h_prime: f64) -> f64 {
     let normalized = h_prime / 360.0;
     let limited = 360.0 * (normalized - floor(normalized));

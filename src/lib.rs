@@ -148,26 +148,21 @@
     clippy::incompatible_msrv, // Functions work fine in 1.70, const context only needs 1.85+
 )]
 
-// Public API exports
+// Public API exports - core types only
 pub use crate::error::{Error, Result};
-#[cfg(feature = "chrono")]
-pub use crate::spa::spa_time_dependent_parts;
-pub use crate::spa::{spa_with_time_dependent_parts, SpaTimeDependent};
 pub use crate::types::{Horizon, RefractionCorrection, SolarPosition, SunriseResult};
 
 // Algorithm modules
 pub mod grena3;
 pub mod spa;
 
-// Core modules
+// Supporting modules
 pub mod error;
+pub mod time;
 pub mod types;
 
 // Internal modules
 mod math;
-
-// Public modules
-pub mod time;
 
 #[cfg(all(test, feature = "chrono"))]
 mod tests {

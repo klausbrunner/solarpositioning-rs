@@ -7,6 +7,10 @@ A Rust library for finding topocentric solar coordinates, i.e. the sun's positio
 > [!NOTE]
 > This library is **not** based on or derived from code published by NREL, ENEA or other parties. It is an implementation precisely following the algorithms described in the respective papers.
 
+## Status
+
+While the core algorithms are stable and well-tested, the API is still evolving. Breaking changes may occur in minor version updates. Please pin to a specific version in production code.
+
 ## Usage
 
 ```sh
@@ -25,7 +29,7 @@ Rust 1.70+. Minimal dependencies. Supports `std` (default) and `no_std` with `li
 
 ### Code
 
-The API is intentionally "flat", comprising a handful of functions and simple structs as results.
+Functions are organized by algorithm (`spa` or `grena3` modules). Results use simple structs and enums.
 
 ```rust
 use chrono::{DateTime, FixedOffset};
@@ -62,7 +66,7 @@ For multiple coordinates at the same time, calculate time-dependent parts once (
 ```rust
 let time_dependent = spa::spa_time_dependent_parts(datetime, 69.0).unwrap();
 for (lat, lon) in [(48.21, 16.37), (52.52, 13.40)] {
-    let pos = spa::spa_with_time_dependent_parts(lat, lon, 0.0, None, &time_dependent).unwrap();
+    let pos = spa::spa_with_time_dependent_parts(&time_dependent, lat, lon, 0.0, None).unwrap();
 }
 ```
 

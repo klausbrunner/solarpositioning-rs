@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **BREAKING** Make API more consistent
+
+## [0.3.6] - 2025-10-04
+
+### Changed
+
+- reduce dependency footprint and made `chrono` optional
+- drop down to Rust 2021 edition (MSRV 1.70)
+
 ## [0.3.5] - 2025-10-03
 
 ### Changed

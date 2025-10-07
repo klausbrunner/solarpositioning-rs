@@ -1,10 +1,14 @@
 # Changelog
 
-## Unreleased
+## [0.4.0] - 2025-10-07
+
+### Added
+
+- Basic sunrise/sunset/twilight calculations without chrono
 
 ### Changed
 
-- **BREAKING** Make API more consistent
+- **BREAKING** Make API more consistent (re-exports changed)
 
 ## [0.3.6] - 2025-10-04
 

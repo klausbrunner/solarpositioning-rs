@@ -89,7 +89,7 @@
 //! println!("Elevation: {:.3}°", position.elevation_angle());
 //! ```
 //!
-//! ### Sunrise and Sunset (requires chrono)
+//! ### Sunrise and Sunset (with chrono)
 //! ```rust
 //! # #[cfg(feature = "chrono")] {
 //! use solar_positioning::{spa, Horizon, time::DeltaT};
@@ -114,6 +114,29 @@
 //!     _ => println!("No sunrise/sunset (polar day/night)"),
 //! }
 //! # }
+//! ```
+//!
+//! ### Sunrise and Sunset (numeric API, no chrono)
+//! ```rust
+//! use solar_positioning::{spa, Horizon};
+//!
+//! // Calculate sunrise/sunset for San Francisco (returns hours since midnight UTC)
+//! let result = spa::sunrise_sunset_utc_for_horizon(
+//!     2026, 6, 21,  // June 21, 2026
+//!     37.7749,      // San Francisco latitude
+//!     -122.4194,    // San Francisco longitude
+//!     69.0,         // ΔT (seconds)
+//!     Horizon::SunriseSunset
+//! ).unwrap();
+//!
+//! match result {
+//!     solar_positioning::SunriseResult::RegularDay { sunrise, transit, sunset } => {
+//!         println!("Sunrise: {:.2} hours UTC", sunrise.hours());
+//!         println!("Solar noon: {:.2} hours UTC", transit.hours());
+//!         println!("Sunset: {:.2} hours UTC", sunset.hours());
+//!     }
+//!     _ => println!("No sunrise/sunset (polar day/night)"),
+//! }
 //! ```
 //!
 //! ## Algorithms

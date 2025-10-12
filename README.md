@@ -111,6 +111,15 @@ Both are fast in absolute terms. The ~10× speed difference only matters for bul
 - Jean Meeus advises giving times "more accurately than to the nearest minute makes no sense". Errors increase toward poles.
 - Results match the [NOAA calculator](http://www.esrl.noaa.gov/gmd/grad/solcalc/) closely.
 
+#### Divergence from the NREL SPA reference code
+
+The library follows the procedure in the SPA paper: sidereal time is evaluated at 0 **UT** (A.2.1)
+while the geocentric α/δ for sunrise/sunset interpolation are evaluated at 0 **TT** for D−1/D/D+1 (A.2.2). The NREL
+reference code (`spa.c`) resets ΔT to zero when building those intermediate ephemerides, effectively keeping
+them in UT. This Rust code preserves the supplied ΔT to stay faithful to the published algorithm rather than
+the C code. As a consequence, sunrise/sunset times differ slightly from `spa.c` but should line up better with
+high-precision ephemerides (JPL Horizons, USNO almanacs, etc.).
+
 ### Delta T
 
 Delta T (ΔT) is the difference between terrestrial time and UT1 ([Wikipedia](https://en.wikipedia.org/wiki/ΔT_(timekeeping))). For many applications it's negligible (~70 seconds in 2025). For maximum accuracy, use observed values (available from US Naval Observatory) or estimates.

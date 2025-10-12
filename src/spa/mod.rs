@@ -362,7 +362,7 @@ pub fn sunrise_sunset_utc(
     check_coordinates(latitude, longitude)?;
 
     // Create Julian date for midnight UTC (0 UT) of the given date
-    let jd_midnight = JulianDate::from_utc(year, month, day, 0, 0, 0.0, 0.0)?;
+    let jd_midnight = JulianDate::from_utc(year, month, day, 0, 0, 0.0, delta_t)?;
 
     // Calculate sunrise/sunset using core algorithm
     calculate_sunrise_sunset_core(jd_midnight, latitude, longitude, delta_t, elevation_angle)
@@ -571,11 +571,15 @@ fn calculate_sunrise_sunset_spa_algorithm<Tz: TimeZone>(
 
     // A.2.1. Calculate the apparent sidereal time at Greenwich at 0 UT
     let (nu_degrees, delta_psi_epsilon, epsilon_degrees) =
-        calculate_sidereal_time_and_nutation(day_start.clone());
+        calculate_sidereal_time_and_nutation(day_start.clone(), delta_t)?;
 
     // A.2.2. Calculate alpha/delta for day before, same day, next day
-    let alpha_deltas =
-        calculate_alpha_deltas_for_three_days(day_start, delta_psi_epsilon, epsilon_degrees)?;
+    let alpha_deltas = calculate_alpha_deltas_for_three_days(
+        day_start,
+        delta_t,
+        delta_psi_epsilon,
+        epsilon_degrees,
+    )?;
 
     // Calculate initial transit time and check for polar conditions
     let m0 = (alpha_deltas[1].alpha - longitude - nu_degrees) / 360.0;
@@ -622,8 +626,9 @@ fn calculate_sunrise_sunset_spa_algorithm<Tz: TimeZone>(
 #[allow(clippy::needless_pass_by_value)]
 fn calculate_sidereal_time_and_nutation<Tz: TimeZone>(
     day_start: DateTime<Tz>,
-) -> (f64, DeltaPsiEpsilon, f64) {
-    let jd = JulianDate::from_datetime(&day_start, 0.0).unwrap();
+    delta_t: f64,
+) -> Result<(f64, DeltaPsiEpsilon, f64)> {
+    let jd = JulianDate::from_datetime(&day_start, delta_t)?;
     let jce_day = jd.julian_ephemeris_century();
     let x_terms = calculate_nutation_terms(jce_day);
     let delta_psi_epsilon = calculate_delta_psi_epsilon(jce_day, &x_terms);
@@ -634,13 +639,14 @@ fn calculate_sidereal_time_and_nutation<Tz: TimeZone>(
         delta_psi_epsilon.delta_psi,
         epsilon_degrees,
     );
-    (nu_degrees, delta_psi_epsilon, epsilon_degrees)
+    Ok((nu_degrees, delta_psi_epsilon, epsilon_degrees))
 }
 
 #[cfg(feature = "chrono")]
 #[allow(clippy::needless_pass_by_value)]
 fn calculate_alpha_deltas_for_three_days<Tz: TimeZone>(
     day_start: DateTime<Tz>,
+    delta_t: f64,
     delta_psi_epsilon: DeltaPsiEpsilon,
     epsilon_degrees: f64,
 ) -> Result<[AlphaDelta; 3]> {
@@ -649,7 +655,7 @@ fn calculate_alpha_deltas_for_three_days<Tz: TimeZone>(
         delta: 0.0,
     }; 3];
     for (i, alpha_delta) in alpha_deltas.iter_mut().enumerate() {
-        let current_jd = JulianDate::from_datetime(&day_start, 0.0)?.add_days((i as f64) - 1.0);
+        let current_jd = JulianDate::from_datetime(&day_start, delta_t)?.add_days((i as f64) - 1.0);
         let current_jme = current_jd.julian_ephemeris_millennium();
         let ad = calculate_alpha_delta(current_jme, delta_psi_epsilon.delta_psi, epsilon_degrees);
         *alpha_delta = ad;
@@ -1137,9 +1143,13 @@ where
 
         let day_start = truncate_to_day_start(&date);
         let (nu_degrees, delta_psi_epsilon, epsilon_degrees) =
-            calculate_sidereal_time_and_nutation(day_start.clone());
-        let alpha_deltas =
-            calculate_alpha_deltas_for_three_days(day_start, delta_psi_epsilon, epsilon_degrees)?;
+            calculate_sidereal_time_and_nutation(day_start.clone(), delta_t)?;
+        let alpha_deltas = calculate_alpha_deltas_for_three_days(
+            day_start,
+            delta_t,
+            delta_psi_epsilon,
+            epsilon_degrees,
+        )?;
 
         Ok((nu_degrees, alpha_deltas))
     })();

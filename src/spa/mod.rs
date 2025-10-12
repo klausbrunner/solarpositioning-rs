@@ -26,7 +26,7 @@ use coefficients::{
 };
 
 #[cfg(feature = "chrono")]
-use chrono::{DateTime, TimeZone};
+use chrono::{DateTime, TimeZone, Utc};
 
 /// Standard sunrise/sunset elevation angle (accounts for refraction and sun's radius).
 const SUNRISE_SUNSET_ANGLE: f64 = -0.83337;
@@ -1022,16 +1022,15 @@ fn normalize_to_unit_range(val: f64) -> f64 {
 
 #[cfg(feature = "chrono")]
 fn truncate_to_day_start<Tz: TimeZone>(datetime: &DateTime<Tz>) -> DateTime<Tz> {
-    datetime
-        .timezone()
-        .from_local_datetime(
-            &datetime
-                .date_naive()
-                .and_hms_opt(0, 0, 0)
-                .expect("midnight is always valid"),
-        )
-        .single()
-        .expect("midnight should have single timezone representation")
+    let tz = datetime.timezone();
+    let utc_midnight = datetime
+        .with_timezone(&Utc)
+        .date_naive()
+        .and_hms_opt(0, 0, 0)
+        .expect("midnight is always valid")
+        .and_utc();
+
+    tz.from_utc_datetime(&utc_midnight.naive_utc())
 }
 
 #[cfg(feature = "chrono")]

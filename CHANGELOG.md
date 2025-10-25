@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- More input validation.
+
+### Changed
+
+- Adapt delta T behaviour in sunrise/sunset calculation to match SPA paper more closely.
+
 ## [0.4.0] - 2025-10-07
 
 ### Added

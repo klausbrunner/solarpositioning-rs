@@ -115,6 +115,10 @@ impl JulianDate {
             ));
         }
 
+        if day > days_in_month(year, month, day)? {
+            return Err(Error::invalid_datetime("day is out of range for month"));
+        }
+
         let jd = calculate_julian_date(year, month, day, hour, minute, second);
         Ok(Self { jd, delta_t })
     }
@@ -253,6 +257,41 @@ fn calculate_julian_date(
     }
 
     jd
+}
+
+const fn is_gregorian_date(year: i32, month: u32, day: u32) -> bool {
+    year > 1582 || (year == 1582 && (month > 10 || (month == 10 && day >= 15)))
+}
+
+const fn is_leap_year(year: i32, is_gregorian: bool) -> bool {
+    if is_gregorian {
+        (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
+    } else {
+        year % 4 == 0
+    }
+}
+
+fn days_in_month(year: i32, month: u32, day: u32) -> Result<u32> {
+    if year == 1582 && month == 10 && (5..=14).contains(&day) {
+        return Err(Error::invalid_datetime(
+            "dates 1582-10-05 through 1582-10-14 do not exist in Gregorian calendar",
+        ));
+    }
+
+    let is_gregorian = is_gregorian_date(year, month, day);
+    let days = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 => {
+            if is_leap_year(year, is_gregorian) {
+                29
+            } else {
+                28
+            }
+        }
+        _ => unreachable!("month already validated"),
+    };
+    Ok(days)
 }
 
 /// ΔT (Delta T) estimation functions.
@@ -471,6 +510,17 @@ mod tests {
         // J2000.0 epoch should be exactly 2451545.0
         assert!((jd.julian_date() - J2000_JDN).abs() < EPSILON);
         assert_eq!(jd.delta_t(), 0.0);
+    }
+
+    #[test]
+    fn test_julian_date_invalid_day_validation() {
+        assert!(JulianDate::from_utc(2024, 2, 30, 0, 0, 0.0, 0.0).is_err());
+        assert!(JulianDate::from_utc(2024, 2, 29, 0, 0, 0.0, 0.0).is_ok());
+        assert!(JulianDate::from_utc(1900, 2, 29, 0, 0, 0.0, 0.0).is_err());
+        assert!(JulianDate::from_utc(1500, 2, 29, 0, 0, 0.0, 0.0).is_ok());
+        assert!(JulianDate::from_utc(1582, 10, 10, 0, 0, 0.0, 0.0).is_err());
+        assert!(JulianDate::from_utc(1582, 10, 4, 0, 0, 0.0, 0.0).is_ok());
+        assert!(JulianDate::from_utc(1582, 10, 15, 0, 0, 0.0, 0.0).is_ok());
     }
 
     #[test]

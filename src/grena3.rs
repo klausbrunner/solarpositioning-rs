@@ -13,8 +13,8 @@
 
 use crate::error::check_coordinates;
 use crate::math::{
-    asin, atan2, cos, degrees_to_radians, normalize_degrees_0_to_360, radians_to_degrees, sin,
-    sqrt, tan, PI,
+    asin, atan2, cos, degrees_to_radians, floor, normalize_degrees_0_to_360, radians_to_degrees,
+    sin, sqrt, tan, PI,
 };
 use crate::{RefractionCorrection, Result, SolarPosition};
 #[cfg(feature = "chrono")]
@@ -198,9 +198,8 @@ pub fn calc_t_from_components(
         y -= 1;
     }
 
-    f64::from((365.25 * f64::from(y - 2000)) as i32)
-        + f64::from((30.6001 * f64::from(m + 1)) as i32)
-        - f64::from((0.01 * f64::from(y)) as i32)
+    floor(365.25 * f64::from(y - 2000)) + floor(30.6001 * f64::from(m + 1))
+        - floor(0.01 * f64::from(y))
         + f64::from(d)
         + 0.0416667 * h
         - 21958.0
@@ -301,5 +300,11 @@ mod tests {
             (t - t3).abs() > 0.5,
             "Different dates should give different t values"
         );
+    }
+
+    #[test]
+    fn test_calc_t_pre_2000_flooring() {
+        let t = calc_t_from_components(1999, 12, 31, 0, 0, 0.0);
+        assert_eq!(t, -21915.0);
     }
 }

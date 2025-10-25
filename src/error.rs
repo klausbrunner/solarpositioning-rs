@@ -170,7 +170,7 @@ pub fn check_coordinates(latitude: f64, longitude: f64) -> Result<()> {
 /// # Errors
 /// Returns `InvalidPressure` if pressure is not between 1 and 2000 hPa.
 pub fn check_pressure(pressure: f64) -> Result<()> {
-    if pressure <= 0.0 || pressure > 2000.0 {
+    if !pressure.is_finite() || pressure <= 0.0 || pressure > 2000.0 {
         return Err(Error::invalid_pressure(pressure));
     }
     Ok(())
@@ -264,6 +264,8 @@ mod tests {
         assert!(check_pressure(0.0).is_err());
         assert!(check_pressure(-100.0).is_err());
         assert!(check_pressure(3000.0).is_err());
+        assert!(check_pressure(f64::NAN).is_err());
+        assert!(check_pressure(f64::INFINITY).is_err());
     }
 
     #[test]

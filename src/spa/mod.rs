@@ -26,7 +26,7 @@ use coefficients::{
 };
 
 #[cfg(feature = "chrono")]
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, LocalResult, TimeZone, Utc};
 
 /// Standard sunrise/sunset elevation angle (accounts for refraction and sun's radius).
 const SUNRISE_SUNSET_ANGLE: f64 = -0.83337;
@@ -1032,14 +1032,26 @@ fn normalize_to_unit_range(val: f64) -> f64 {
 #[cfg(feature = "chrono")]
 fn truncate_to_day_start<Tz: TimeZone>(datetime: &DateTime<Tz>) -> DateTime<Tz> {
     let tz = datetime.timezone();
-    let utc_midnight = datetime
-        .with_timezone(&Utc)
+    let local_midnight = datetime
         .date_naive()
         .and_hms_opt(0, 0, 0)
-        .expect("midnight is always valid")
-        .and_utc();
+        .expect("midnight is always valid");
 
-    tz.from_utc_datetime(&utc_midnight.naive_utc())
+    match tz.from_local_datetime(&local_midnight) {
+        LocalResult::Single(dt) => dt,
+        LocalResult::Ambiguous(earliest, _) => earliest,
+        LocalResult::None => {
+            // fallback to UTC conversion to preserve behavior if midnight is skipped
+            let utc_midnight = datetime
+                .with_timezone(&Utc)
+                .date_naive()
+                .and_hms_opt(0, 0, 0)
+                .expect("midnight is always valid")
+                .and_utc();
+
+            tz.from_utc_datetime(&utc_midnight.naive_utc())
+        }
+    }
 }
 
 #[cfg(feature = "chrono")]
@@ -1469,7 +1481,7 @@ pub fn spa_with_time_dependent_parts(
 #[cfg(all(test, feature = "chrono", feature = "std"))]
 mod tests {
     use super::*;
-    use chrono::{DateTime, FixedOffset};
+    use chrono::{DateTime, FixedOffset, NaiveTime};
     use std::collections::HashSet;
 
     #[test]
@@ -1624,5 +1636,16 @@ mod tests {
         assert_eq!(Horizon::SunriseSunset.elevation_angle(), -0.83337);
         assert_eq!(Horizon::CivilTwilight.elevation_angle(), -6.0);
         assert_eq!(Horizon::Custom(-10.5).elevation_angle(), -10.5);
+    }
+
+    #[test]
+    fn truncate_to_day_start_keeps_local_midnight() {
+        let tz = FixedOffset::east_opt(2 * 3600).unwrap();
+        let midnight = tz.with_ymd_and_hms(2024, 3, 30, 0, 0, 0).unwrap();
+
+        let truncated = truncate_to_day_start(&midnight);
+
+        assert_eq!(truncated.date_naive(), midnight.date_naive());
+        assert_eq!(truncated.time(), NaiveTime::from_hms_opt(0, 0, 0).unwrap());
     }
 }

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## [0.4.2] - 2025-10-26
+
+### Fixed
+
+- Prevent local timezone inputs from jumping to the previous civil day when truncating to midnight in SPA calculations.
+
 ## [0.4.1] - 2025-10-25
 
 ### Added

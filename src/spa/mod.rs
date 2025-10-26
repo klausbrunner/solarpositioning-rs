@@ -90,6 +90,7 @@ const SECONDS_PER_HOUR: f64 = 3600.0;
 /// println!("Elevation: {:.3}°", position.elevation_angle());
 /// ```
 #[cfg(feature = "chrono")]
+#[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
 #[allow(clippy::needless_pass_by_value)]
 pub fn solar_position<Tz: TimeZone>(
     datetime: DateTime<Tz>,
@@ -465,6 +466,7 @@ pub fn sunrise_sunset_utc_for_horizon(
 ///     -0.833     // standard sunrise/sunset angle
 /// ).unwrap();
 #[cfg(feature = "chrono")]
+#[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
 #[allow(clippy::needless_pass_by_value)]
 pub fn sunrise_sunset<Tz: TimeZone>(
     date: DateTime<Tz>,
@@ -952,6 +954,7 @@ struct FinalTimeParams<Tz: TimeZone> {
 /// ).unwrap();
 /// ```
 #[cfg(feature = "chrono")]
+#[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
 pub fn sunrise_sunset_for_horizon<Tz: TimeZone>(
     date: DateTime<Tz>,
     latitude: f64,
@@ -1126,6 +1129,7 @@ fn limit_h_prime(h_prime: f64) -> f64 {
 /// # }
 /// ```
 #[cfg(feature = "chrono")]
+#[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
 pub fn sunrise_sunset_multiple<Tz, H>(
     date: DateTime<Tz>,
     latitude: f64,
@@ -1250,6 +1254,7 @@ fn calculate_sunrise_sunset_spa_algorithm_with_precomputed<Tz: TimeZone>(
 ///
 /// # Panics
 #[cfg(feature = "chrono")]
+#[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
 #[allow(clippy::needless_pass_by_value)]
 pub fn spa_time_dependent_parts<Tz: TimeZone>(
     datetime: DateTime<Tz>,

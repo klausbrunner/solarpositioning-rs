@@ -3,6 +3,7 @@
 //! High-accuracy solar positioning algorithms for calculating sun position and sunrise/sunset times.
 
 #![cfg_attr(not(feature = "std"), no_std)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 //!
 //! This library provides implementations of two complementary solar positioning algorithms:
 //! - **SPA** (Solar Position Algorithm): NREL's authoritative algorithm (±0.0003°, years -2000 to 6000)

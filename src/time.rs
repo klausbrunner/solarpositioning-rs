@@ -47,6 +47,7 @@ impl JulianDate {
     /// # Errors
     /// Returns error if the date/time components are invalid (e.g., invalid month, day, hour).
     #[cfg(feature = "chrono")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
     pub fn from_datetime<Tz: TimeZone>(
         datetime: &chrono::DateTime<Tz>,
         delta_t: f64,
@@ -491,6 +492,7 @@ impl DeltaT {
     /// let delta_t2 = DeltaT::estimate_from_date_like(date).unwrap();
     /// assert_eq!(delta_t, delta_t2);
     #[cfg(feature = "chrono")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
     #[allow(clippy::needless_pass_by_value)]
     pub fn estimate_from_date_like<D: Datelike>(date: D) -> Result<f64> {
         Self::estimate_from_date(date.year(), date.month())

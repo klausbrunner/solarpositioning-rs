@@ -70,6 +70,7 @@ use chrono::{DateTime, Datelike, TimeZone, Timelike};
 /// println!("Elevation: {:.3}°", position.elevation_angle());
 /// ```
 #[cfg(feature = "chrono")]
+#[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
 #[allow(clippy::needless_pass_by_value)]
 pub fn solar_position<Tz: TimeZone>(
     datetime: DateTime<Tz>,

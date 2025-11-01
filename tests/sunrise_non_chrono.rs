@@ -63,6 +63,18 @@ fn test_hours_utc_day_and_hours() {
     let (day, hours) = h3.day_and_hours();
     assert_eq!(day, -1);
     assert!((hours - 23.5).abs() < 1e-10);
+
+    // Multi-day positive offset
+    let h4 = HoursUtc::from_hours(49.25);
+    let (day, hours) = h4.day_and_hours();
+    assert_eq!(day, 2);
+    assert!((hours - 1.25).abs() < 1e-10);
+
+    // Multi-day negative offset
+    let h5 = HoursUtc::from_hours(-50.5);
+    let (day, hours) = h5.day_and_hours();
+    assert_eq!(day, -3);
+    assert!((hours - 21.5).abs() < 1e-10);
 }
 
 #[test]

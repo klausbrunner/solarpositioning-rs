@@ -1,6 +1,7 @@
 //! Core data types for solar positioning calculations.
 
 use crate::error::{check_azimuth, check_pressure, check_temperature, check_zenith_angle};
+use crate::math::floor;
 use crate::{Error, Result};
 
 /// Predefined elevation angles for sunrise/sunset calculations.
@@ -255,11 +256,11 @@ impl HoursUtc {
         self.0
     }
 
-    /// Gets the day offset (-1, 0, or 1) and normalized hours (0.0 to < 24.0).
+    /// Gets the day offset and normalized hours (0.0 to < 24.0).
     ///
     /// # Returns
     /// Tuple of (`day_offset`, `hours_in_day`) where:
-    /// - `day_offset`: -1 = previous day, 0 = current day, 1 = next day
+    /// - `day_offset`: whole days offset from the calculation date (negative = previous days, positive = following days)
     /// - `hours_in_day`: 0.0 to < 24.0
     ///
     /// # Example
@@ -273,13 +274,30 @@ impl HoursUtc {
     #[must_use]
     pub fn day_and_hours(&self) -> (i32, f64) {
         let hours = self.0;
-        if hours < 0.0 {
-            (-1, hours + 24.0)
-        } else if hours >= 24.0 {
-            (1, hours - 24.0)
-        } else {
-            (0, hours)
+        if !hours.is_finite() {
+            return (0, hours);
         }
+
+        let mut day_offset_raw = floor(hours / 24.0);
+        let mut normalized_hours = hours - day_offset_raw * 24.0;
+
+        if normalized_hours < 0.0 {
+            normalized_hours += 24.0;
+            day_offset_raw -= 1.0;
+        } else if normalized_hours >= 24.0 {
+            normalized_hours -= 24.0;
+            day_offset_raw += 1.0;
+        }
+
+        let day_offset = if day_offset_raw >= f64::from(i32::MAX) {
+            i32::MAX
+        } else if day_offset_raw <= f64::from(i32::MIN) {
+            i32::MIN
+        } else {
+            day_offset_raw as i32
+        };
+
+        (day_offset, normalized_hours)
     }
 }
 

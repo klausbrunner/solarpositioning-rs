@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- **BREAKING** fix: make `HoursUtc::day_and_hours` normalise multi-day offsets so the hour component stays within `[0, 24)`.
+
 ## [0.4.2] - 2025-10-26
 
 ### Fixed

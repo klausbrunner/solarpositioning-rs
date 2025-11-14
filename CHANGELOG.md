@@ -4,7 +4,13 @@
 
 ### Changed
 
-- **BREAKING** fix: make `HoursUtc::day_and_hours` normalise multi-day offsets so the hour component stays within `[0, 24)`.
+- _Nothing yet._
+
+## [0.4.3] - 2025-11-14
+
+### Changed
+
+- fix: make `HoursUtc::day_and_hours` normalise multi-day offsets so the hour component stays within `[0, 24)`.
 
 ## [0.4.2] - 2025-10-26
 

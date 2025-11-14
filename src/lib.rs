@@ -27,16 +27,16 @@
 //! **Configuration examples:**
 //! ```toml
 //! # Default: std + chrono (most convenient)
-//! solar-positioning = "0.3"
+//! solar-positioning = "0.4"
 //!
 //! # Minimal std (no chrono, smallest dependency tree)
-//! solar-positioning = { version = "0.3", default-features = false, features = ["std"] }
+//! solar-positioning = { version = "0.4", default-features = false, features = ["std"] }
 //!
 //! # no_std + chrono (embedded with DateTime support)
-//! solar-positioning = { version = "0.3", default-features = false, features = ["libm", "chrono"] }
+//! solar-positioning = { version = "0.4", default-features = false, features = ["libm", "chrono"] }
 //!
 //! # Minimal no_std (pure numeric API)
-//! solar-positioning = { version = "0.3", default-features = false, features = ["libm"] }
+//! solar-positioning = { version = "0.4", default-features = false, features = ["libm"] }
 //! ```
 //!
 //! ## References

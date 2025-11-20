@@ -330,10 +330,13 @@ impl DeltaT {
             return Err(Error::invalid_datetime("year must be finite"));
         }
 
-        let delta_t = if year < -500.0 {
-            let u = (year - 1820.0) / 100.0;
-            polynomial(&[-20.0, 0.0, 32.0], u)
-        } else if year < 500.0 {
+        if year < -500.0 {
+            return Err(Error::invalid_datetime(
+                "ΔT estimates not available before year -500",
+            ));
+        }
+
+        let delta_t = if year < 500.0 {
             let u = year / 100.0;
             polynomial(
                 &[
@@ -605,7 +608,7 @@ mod tests {
         // Test edge cases
         assert!(DeltaT::estimate(-500.0).is_ok());
         assert!(DeltaT::estimate(3000.0).is_ok());
-        assert!(DeltaT::estimate(-501.0).is_ok()); // Should work for ancient dates
+        assert!(DeltaT::estimate(-501.0).is_err());
         assert!(DeltaT::estimate(3001.0).is_err()); // Should fail beyond 3000
     }
 
@@ -623,6 +626,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "chrono")]
     fn test_delta_t_from_date_like() {
         use chrono::{DateTime, FixedOffset, NaiveDate, Utc};
 

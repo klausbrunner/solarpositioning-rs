@@ -59,8 +59,9 @@ impl core::hash::Hash for Horizon {
             Self::AstronomicalTwilight => 3.hash(state),
             Self::Custom(angle) => {
                 4.hash(state);
-                // Use bit representation for deterministic hashing of f64
-                angle.to_bits().hash(state);
+                // Normalize -0.0 and +0.0 so hashing remains consistent with PartialEq
+                let normalized = if *angle == 0.0 { 0.0 } else { *angle };
+                normalized.to_bits().hash(state);
             }
         }
     }
@@ -308,7 +309,7 @@ impl HoursUtc {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(
     feature = "std",
-    doc = "Default generic parameter is `chrono::DateTime<chrono::Utc>` when `std` feature is enabled."
+    doc = "Default generic parameter is `()`; chrono helpers return `SunriseResult<chrono::DateTime<Tz>>`."
 )]
 pub enum SunriseResult<T = ()> {
     /// Regular day with distinct sunrise, transit (noon), and sunset times
@@ -392,6 +393,18 @@ mod tests {
 
         assert!(Horizon::custom(-95.0).is_err());
         assert!(Horizon::custom(95.0).is_err());
+    }
+
+    #[test]
+    #[cfg(feature = "std")]
+    fn test_horizon_hash_normalizes_zero_sign() {
+        use std::collections::HashSet;
+
+        let mut set = HashSet::new();
+        set.insert(Horizon::Custom(0.0));
+        set.insert(Horizon::Custom(-0.0));
+
+        assert_eq!(set.len(), 1, "hashing should treat +0.0 and -0.0 equally");
     }
 
     #[test]

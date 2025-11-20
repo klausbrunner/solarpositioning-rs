@@ -652,12 +652,14 @@ fn calculate_alpha_deltas_for_three_days<Tz: TimeZone>(
     delta_psi_epsilon: DeltaPsiEpsilon,
     epsilon_degrees: f64,
 ) -> Result<[AlphaDelta; 3]> {
+    let base_jd = JulianDate::from_datetime(&day_start, delta_t)?;
+
     let mut alpha_deltas = [AlphaDelta {
         alpha: 0.0,
         delta: 0.0,
     }; 3];
     for (i, alpha_delta) in alpha_deltas.iter_mut().enumerate() {
-        let current_jd = JulianDate::from_datetime(&day_start, delta_t)?.add_days((i as f64) - 1.0);
+        let current_jd = base_jd.add_days((i as f64) - 1.0);
         let current_jme = current_jd.julian_ephemeris_millennium();
         let ad = calculate_alpha_delta(current_jme, delta_psi_epsilon.delta_psi, epsilon_degrees);
         *alpha_delta = ad;

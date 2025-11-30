@@ -155,20 +155,9 @@ pub fn solar_position_from_julian(
 /// Pre-computed astronomical values independent of observer location.
 /// Use with [`spa_with_time_dependent_parts`] for efficient coordinate sweeps.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct SpaTimeDependent {
-    /// Geocentric longitude (degrees)
-    pub(crate) theta_degrees: f64,
-    /// Geocentric latitude (degrees)
-    pub(crate) beta_degrees: f64,
     /// Earth radius vector (AU)
     pub(crate) r: f64,
-    /// Nutation in longitude (degrees)
-    pub(crate) delta_psi: f64,
-    /// True obliquity of ecliptic (degrees)
-    pub(crate) epsilon_degrees: f64,
-    /// Apparent sun longitude (degrees)
-    pub(crate) lambda_degrees: f64,
     /// Apparent sidereal time at Greenwich (degrees)
     pub(crate) nu_degrees: f64,
     /// Geocentric sun right ascension (degrees)
@@ -1338,12 +1327,7 @@ pub fn spa_time_dependent_from_julian(jd: JulianDate) -> Result<SpaTimeDependent
         radians_to_degrees(calculate_geocentric_sun_declination(beta, epsilon, lambda));
 
     Ok(SpaTimeDependent {
-        theta_degrees,
-        beta_degrees,
         r,
-        delta_psi: delta_psi_epsilon.delta_psi,
-        epsilon_degrees,
-        lambda_degrees,
         nu_degrees,
         alpha_degrees,
         delta_degrees,

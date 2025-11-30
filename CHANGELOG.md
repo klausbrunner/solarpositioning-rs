@@ -2,9 +2,12 @@
 
 ## Unreleased
 
+## [0.4.4] - 2025-11-30
+
 ### Changed
 
-- _Nothing yet._
+- Trim `SpaTimeDependent` to only keep values used by `spa_with_time_dependent_parts()`.
+- Align single and multi sunrise behaviour in polar conditions. This may result in output changes.
 
 ## [0.4.3] - 2025-11-14
 

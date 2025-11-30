@@ -701,24 +701,6 @@ fn check_polar_conditions_type(
     }
 }
 
-/// Check for polar day/night conditions and construct `SunriseResult`
-#[cfg(feature = "chrono")]
-fn check_polar_conditions<Tz: TimeZone>(
-    day: DateTime<Tz>,
-    m0: f64,
-    latitude: f64,
-    elevation_angle: f64,
-    delta1: f64,
-) -> Option<crate::SunriseResult<DateTime<Tz>>> {
-    check_polar_conditions_type(latitude, elevation_angle, delta1).map(|polar_type| {
-        let transit = add_fraction_of_day(day, m0);
-        match polar_type {
-            PolarType::AllDay => crate::SunriseResult::AllDay { transit },
-            PolarType::AllNight => crate::SunriseResult::AllNight { transit },
-        }
-    })
-}
-
 /// A.2.5-6. Calculate approximate times for transit, sunrise, sunset
 fn calculate_approximate_times(
     m0: f64,
@@ -1203,22 +1185,14 @@ fn calculate_sunrise_sunset_spa_algorithm_with_precomputed<Tz: TimeZone>(
 
     // Calculate initial transit time and check for polar conditions
     let m0 = (alpha_deltas[1].alpha - longitude - nu_degrees) / 360.0;
-    if let Some(polar_result) = check_polar_conditions(
-        day_start.clone(),
-        m0,
-        latitude,
-        elevation_angle,
-        alpha_deltas[1].delta,
-    ) {
-        return polar_result;
-    }
+    let polar_type = check_polar_conditions_type(latitude, elevation_angle, alpha_deltas[1].delta);
 
     // Calculate approximate times and apply corrections
     let (m_values, _h0_degrees) =
         calculate_approximate_times(m0, latitude, elevation_angle, alpha_deltas[1].delta);
 
     // Apply final corrections to get accurate times
-    calculate_final_times(FinalTimeParams {
+    let final_result = calculate_final_times(FinalTimeParams {
         day: day_start,
         m_values,
         nu_degrees,
@@ -1227,7 +1201,25 @@ fn calculate_sunrise_sunset_spa_algorithm_with_precomputed<Tz: TimeZone>(
         longitude,
         elevation_angle,
         alpha_deltas,
-    })
+    });
+
+    match polar_type {
+        Some(PolarType::AllDay) => {
+            if let crate::SunriseResult::RegularDay { transit, .. } = final_result {
+                crate::SunriseResult::AllDay { transit }
+            } else {
+                final_result
+            }
+        }
+        Some(PolarType::AllNight) => {
+            if let crate::SunriseResult::RegularDay { transit, .. } = final_result {
+                crate::SunriseResult::AllNight { transit }
+            } else {
+                final_result
+            }
+        }
+        None => final_result,
+    }
 }
 
 /// Extract expensive time-dependent parts of SPA calculation (steps 1-11).
@@ -1573,6 +1565,39 @@ mod tests {
                 }
                 _ => panic!("Bulk and individual results differ in type for {horizon:?}"),
             }
+        }
+    }
+
+    #[test]
+    fn test_sunrise_sunset_multiple_polar_consistency() {
+        let datetime = "2023-06-21T12:00:00Z"
+            .parse::<DateTime<FixedOffset>>()
+            .unwrap();
+
+        let individual = sunrise_sunset_for_horizon(
+            datetime,
+            80.0, // high latitude to trigger polar day around summer solstice
+            0.0,
+            69.0,
+            Horizon::SunriseSunset,
+        )
+        .unwrap();
+
+        let bulk_results: Result<Vec<_>> =
+            sunrise_sunset_multiple(datetime, 80.0, 0.0, 69.0, [Horizon::SunriseSunset]).collect();
+
+        let (_, bulk) = bulk_results.unwrap().into_iter().next().unwrap();
+
+        match (bulk, individual) {
+            (
+                crate::SunriseResult::AllDay { transit: t1 },
+                crate::SunriseResult::AllDay { transit: t2 },
+            )
+            | (
+                crate::SunriseResult::AllNight { transit: t1 },
+                crate::SunriseResult::AllNight { transit: t2 },
+            ) => assert_eq!(t1, t2),
+            _ => panic!("expected matching polar-day/night results between bulk and individual"),
         }
     }
 

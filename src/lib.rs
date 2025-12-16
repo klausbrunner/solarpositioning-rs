@@ -98,6 +98,8 @@
 //!
 //! // Calculate sunrise/sunset for San Francisco
 //! let date = "2026-06-21T00:00:00-07:00".parse::<DateTime<FixedOffset>>().unwrap();
+//! // Note: returned timestamps are in the same timezone as `date`, but can fall on the
+//! // previous/next local calendar date when events occur near midnight.
 //! let result = spa::sunrise_sunset_for_horizon(
 //!     date,
 //!     37.7749,  // San Francisco latitude

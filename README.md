@@ -88,6 +88,10 @@ match result {
 }
 ```
 
+Returned event timestamps are in the same timezone as the input `DateTime`, but can fall on the
+previous/next local calendar date when events occur near midnight (e.g., at timezone boundaries or
+for twilights).
+
 For twilight, use `Horizon::CivilTwilight`, `Horizon::NauticalTwilight`, or `Horizon::AstronomicalTwilight`.
 
 ### Examples

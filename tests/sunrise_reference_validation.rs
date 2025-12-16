@@ -1,6 +1,6 @@
 //! Test sunrise/sunset calculations against reference data.
 
-use chrono::{DateTime, FixedOffset, TimeZone, Timelike, Utc};
+use chrono::{DateTime, Datelike, FixedOffset, TimeZone, Timelike, Utc};
 use csv::ReaderBuilder;
 use solar_positioning::{spa, types::SunriseResult, RefractionCorrection};
 use std::error::Error;
@@ -325,7 +325,7 @@ fn test_sunrise_sunset_against_spa_reference_data() -> Result<(), Box<dyn Error>
 fn test_polar_transit_accuracy_svalbard() -> Result<(), Box<dyn Error>> {
     // Regression test for polar latitude transit accuracy
     // Svalbard, Norway (78.0°N, 15.0°E) on 2024-01-01
-    // Should match solarpos reference: transit at 12:03:17+01:00
+    // Verify chrono wrapper stays aligned with SPA's 0 UT anchored algorithm.
     let latitude = 78.0;
     let longitude = 15.0;
     let tz = FixedOffset::east_opt(3600).unwrap();
@@ -335,10 +335,27 @@ fn test_polar_transit_accuracy_svalbard() -> Result<(), Box<dyn Error>> {
 
     match result {
         SunriseResult::AllNight { transit } => {
-            // Verify exact transit time matches solarpos reference
-            assert_eq!(transit.hour(), 12);
-            assert_eq!(transit.minute(), 3);
-            assert_eq!(transit.second(), 17);
+            // Chrono wrapper treats the local calendar date as the SPA UTC calculation date.
+            let base_utc_date = chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+            let expected = match spa::sunrise_sunset_utc(
+                base_utc_date.year(),
+                base_utc_date.month(),
+                base_utc_date.day(),
+                latitude,
+                longitude,
+                0.0,
+                -0.833,
+            )? {
+                SunriseResult::AllNight { transit } => transit,
+                _ => panic!("expected polar night from UTC API"),
+            };
+            let expected_utc = base_utc_date.and_hms_opt(0, 0, 0).unwrap().and_utc()
+                + chrono::Duration::milliseconds((expected.hours() * 3_600_000.0) as i64);
+
+            assert_eq!(
+                transit.with_timezone(&Utc).naive_utc(),
+                expected_utc.naive_utc()
+            );
 
             // Verify azimuth is very close to 180° at transit
             let pos = spa::solar_position(

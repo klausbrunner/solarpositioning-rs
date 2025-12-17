@@ -91,6 +91,8 @@ match result {
 Returned event timestamps are in the same timezone as the input `DateTime`, but can fall on the
 previous/next local calendar date when events occur near midnight (e.g., at timezone boundaries or
 for twilights).
+The UTC calculation day is chosen so that transit lands on the requested local date; sunrise/sunset
+may shift by ±1 day to keep the expected sunrise–transit–sunset order.
 
 For twilight, use `Horizon::CivilTwilight`, `Horizon::NauticalTwilight`, or `Horizon::AstronomicalTwilight`.
 

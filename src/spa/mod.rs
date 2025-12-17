@@ -435,7 +435,9 @@ pub fn sunrise_sunset_utc_for_horizon(
 ///
 /// Returned times are in the same timezone as `date`, but can fall on the previous/next local
 /// calendar date when events occur near midnight (e.g., at timezone boundaries or for twilights).
-/// For non-UTC offsets, sunrise is adjusted to precede transit if it would otherwise fall after it.
+/// The internal UTC calculation date is chosen so that transit falls on the requested local date.
+/// For non-UTC offsets, sunrise/sunset are shifted by full days when necessary so they bracket
+/// transit in the expected order.
 ///
 /// # Errors
 /// Returns error for invalid coordinates (latitude outside ±90°, longitude outside ±180°)
@@ -471,45 +473,48 @@ pub fn sunrise_sunset<Tz: TimeZone>(
     check_coordinates(latitude, longitude)?;
 
     let tz = date.timezone();
-    let base_utc_date = utc_date_for_local_calendar_day(&date);
+    let local_date = date.date_naive();
+    let base_utc_date_guess = utc_date_for_local_calendar_day(&date);
+    let (_base_utc_date, result) =
+        select_utc_date_by_transit(local_date, base_utc_date_guess, |d| {
+            let hours_result = sunrise_sunset_utc(
+                d.year(),
+                d.month(),
+                d.day(),
+                latitude,
+                longitude,
+                delta_t,
+                elevation_angle,
+            )?;
 
-    let hours_result = sunrise_sunset_utc(
-        base_utc_date.year(),
-        base_utc_date.month(),
-        base_utc_date.day(),
-        latitude,
-        longitude,
-        delta_t,
-        elevation_angle,
-    )?;
+            let converted = match hours_result {
+                crate::SunriseResult::RegularDay {
+                    sunrise,
+                    transit,
+                    sunset,
+                } => crate::SunriseResult::RegularDay {
+                    sunrise: hours_utc_to_datetime(&tz, d, sunrise),
+                    transit: hours_utc_to_datetime(&tz, d, transit),
+                    sunset: hours_utc_to_datetime(&tz, d, sunset),
+                },
+                crate::SunriseResult::AllDay { transit } => crate::SunriseResult::AllDay {
+                    transit: hours_utc_to_datetime(&tz, d, transit),
+                },
+                crate::SunriseResult::AllNight { transit } => crate::SunriseResult::AllNight {
+                    transit: hours_utc_to_datetime(&tz, d, transit),
+                },
+            };
 
-    let result = match hours_result {
-        crate::SunriseResult::RegularDay {
-            sunrise,
-            transit,
-            sunset,
-        } => crate::SunriseResult::RegularDay {
-            sunrise: hours_utc_to_datetime(&tz, base_utc_date, sunrise),
-            transit: hours_utc_to_datetime(&tz, base_utc_date, transit),
-            sunset: hours_utc_to_datetime(&tz, base_utc_date, sunset),
-        },
-        crate::SunriseResult::AllDay { transit } => crate::SunriseResult::AllDay {
-            transit: hours_utc_to_datetime(&tz, base_utc_date, transit),
-        },
-        crate::SunriseResult::AllNight { transit } => crate::SunriseResult::AllNight {
-            transit: hours_utc_to_datetime(&tz, base_utc_date, transit),
-        },
-    };
+            let transit_local_date = match &converted {
+                crate::SunriseResult::RegularDay { transit, .. }
+                | crate::SunriseResult::AllDay { transit }
+                | crate::SunriseResult::AllNight { transit } => transit.date_naive(),
+            };
 
-    correct_sunrise_if_after_transit(
-        &tz,
-        base_utc_date,
-        latitude,
-        longitude,
-        delta_t,
-        elevation_angle,
-        result,
-    )
+            Ok((transit_local_date, converted))
+        })?;
+
+    Ok(ensure_events_bracket_transit(result))
 }
 
 /// Precompute time-dependent values used by SPA sunrise/sunset calculations for a UTC midnight.
@@ -779,7 +784,9 @@ struct AlphaDelta {
 ///
 /// Returned times are in the same timezone as `date`, but can fall on the previous/next local
 /// calendar date when events occur near midnight (e.g., at timezone boundaries or for twilights).
-/// For non-UTC offsets, sunrise is adjusted to precede transit if it would otherwise fall after it.
+/// The internal UTC calculation date is chosen so that transit falls on the requested local date.
+/// For non-UTC offsets, sunrise/sunset are shifted by full days when necessary so they bracket
+/// transit in the expected order.
 ///
 /// # Errors
 /// Returns error for invalid coordinates, dates, or computation failures.
@@ -886,13 +893,36 @@ fn normalize_to_unit_range(val: f64) -> f64 {
 fn utc_date_for_local_calendar_day<Tz: TimeZone>(datetime: &DateTime<Tz>) -> NaiveDate {
     // SPA sunrise/sunset (Appendix A.2) is defined relative to 0 UT (midnight UTC) of a UTC date.
     //
-    // For a timezone-aware input "day", we treat the input's local calendar date (YYYY-MM-DD) as
-    // the SPA UTC calculation date, and then map the resulting "hours since midnight UTC" back
-    // into the input timezone.
-    //
-    // Near timezone boundaries this can yield a sunrise that occurs after transit (i.e., the next
-    // day's sunrise). In that case we correct sunrise by taking it from the previous UTC day.
+    // This returns an initial guess for the UTC calculation date. Callers may adjust it by ±1 day
+    // so that solar transit falls on the requested local calendar date.
     datetime.date_naive()
+}
+
+#[cfg(feature = "chrono")]
+fn select_utc_date_by_transit<V, F>(
+    local_date: NaiveDate,
+    mut utc_date: NaiveDate,
+    mut compute: F,
+) -> Result<(NaiveDate, V)>
+where
+    F: FnMut(NaiveDate) -> Result<(NaiveDate, V)>,
+{
+    let mut last = None;
+    for _ in 0..2 {
+        let (transit_local_date, value) = compute(utc_date)?;
+        last = Some(value);
+        if transit_local_date == local_date {
+            break;
+        }
+
+        utc_date = if transit_local_date > local_date {
+            utc_date.pred_opt().unwrap_or(utc_date)
+        } else {
+            utc_date.succ_opt().unwrap_or(utc_date)
+        };
+    }
+
+    Ok((utc_date, last.expect("loop runs at least once")))
 }
 
 #[cfg(feature = "chrono")]
@@ -915,56 +945,43 @@ fn hours_utc_to_datetime<Tz: TimeZone>(
 }
 
 #[cfg(feature = "chrono")]
-fn correct_sunrise_if_after_transit<Tz: TimeZone>(
-    tz: &Tz,
-    base_utc_date: NaiveDate,
-    latitude: f64,
-    longitude: f64,
-    delta_t: f64,
-    elevation_angle: f64,
+fn ensure_events_bracket_transit<Tz: TimeZone>(
     result: crate::SunriseResult<DateTime<Tz>>,
-) -> Result<crate::SunriseResult<DateTime<Tz>>> {
+) -> crate::SunriseResult<DateTime<Tz>> {
     let crate::SunriseResult::RegularDay {
         mut sunrise,
         transit,
-        sunset,
+        mut sunset,
     } = result
     else {
-        return Ok(result);
+        return result;
     };
 
     // For UTC inputs, keep the simple "UTC date -> UTC events" mapping. The midnight-boundary
     // correction is intended for local civil dates (non-zero offsets), where the sunrise that
     // precedes the main daytime can fall just before local midnight.
     if transit.offset().fix().local_minus_utc() == 0 {
-        return Ok(crate::SunriseResult::RegularDay {
+        return crate::SunriseResult::RegularDay {
             sunrise,
             transit,
             sunset,
-        });
+        };
     }
 
+    // Keep sunrise before transit and sunset after it even when SPA wraps near midnight UTC.
     if sunrise > transit {
-        if let Some(prev_utc_date) = base_utc_date.pred_opt() {
-            if let crate::SunriseResult::RegularDay { sunrise: prev, .. } = sunrise_sunset_utc(
-                prev_utc_date.year(),
-                prev_utc_date.month(),
-                prev_utc_date.day(),
-                latitude,
-                longitude,
-                delta_t,
-                elevation_angle,
-            )? {
-                sunrise = hours_utc_to_datetime(tz, prev_utc_date, prev);
-            }
-        }
+        sunrise -= chrono::Duration::days(1);
     }
 
-    Ok(crate::SunriseResult::RegularDay {
+    if sunset < transit {
+        sunset += chrono::Duration::days(1);
+    }
+
+    crate::SunriseResult::RegularDay {
         sunrise,
         transit,
         sunset,
-    })
+    }
 }
 
 /// Limit to 0..1 if absolute value > 2 (Java limitIfNecessary)
@@ -1004,6 +1021,7 @@ fn limit_h_prime(h_prime: f64) -> f64 {
 ///
 /// Returned times are in the same timezone as `date`, but can fall on the previous/next local
 /// calendar date when events occur near midnight (e.g., at timezone boundaries or for twilights).
+/// The internal UTC calculation date is chosen so that transit falls on the requested local date.
 /// For non-UTC offsets, sunrise is adjusted to precede transit if it would otherwise fall after it.
 ///
 /// # Returns
@@ -1057,26 +1075,41 @@ where
     H: IntoIterator<Item = Horizon>,
 {
     let tz = date.timezone();
-    let base_utc_date = utc_date_for_local_calendar_day(&date);
+    let local_date = date.date_naive();
+    let base_utc_date_guess = utc_date_for_local_calendar_day(&date);
 
     // Pre-calculate common values once for efficiency.
     let precomputed = (|| -> Result<_> {
         check_coordinates(latitude, longitude)?;
-        let jd_midnight = JulianDate::from_utc(
-            base_utc_date.year(),
-            base_utc_date.month(),
-            base_utc_date.day(),
-            0,
-            0,
-            0.0,
-            delta_t,
-        )?;
+        let (base_utc_date, (nu_degrees, alpha_deltas)) =
+            select_utc_date_by_transit(local_date, base_utc_date_guess, |d| {
+                let jd_midnight =
+                    JulianDate::from_utc(d.year(), d.month(), d.day(), 0, 0, 0.0, delta_t)?;
 
-        Ok(precompute_sunrise_sunset_for_jd_midnight(jd_midnight))
+                let (nu_degrees, alpha_deltas) =
+                    precompute_sunrise_sunset_for_jd_midnight(jd_midnight);
+                let transit_hours = match calculate_sunrise_sunset_hours_with_precomputed(
+                    latitude,
+                    longitude,
+                    delta_t,
+                    Horizon::SunriseSunset.elevation_angle(),
+                    nu_degrees,
+                    alpha_deltas,
+                ) {
+                    crate::SunriseResult::RegularDay { transit, .. }
+                    | crate::SunriseResult::AllDay { transit }
+                    | crate::SunriseResult::AllNight { transit } => transit,
+                };
+
+                let transit_local_date = hours_utc_to_datetime(&tz, d, transit_hours).date_naive();
+                Ok((transit_local_date, (nu_degrees, alpha_deltas)))
+            })?;
+
+        Ok((base_utc_date, nu_degrees, alpha_deltas))
     })();
 
     horizons.into_iter().map(move |horizon| {
-        let (nu_degrees, alpha_deltas) = precomputed.clone()?;
+        let (base_utc_date, nu_degrees, alpha_deltas) = precomputed.clone()?;
         let hours_result = calculate_sunrise_sunset_hours_with_precomputed(
             latitude,
             longitude,
@@ -1104,15 +1137,7 @@ where
             },
         };
 
-        let result = correct_sunrise_if_after_transit(
-            &tz,
-            base_utc_date,
-            latitude,
-            longitude,
-            delta_t,
-            horizon.elevation_angle(),
-            result,
-        )?;
+        let result = ensure_events_bracket_transit(result);
 
         Ok((horizon, result))
     })

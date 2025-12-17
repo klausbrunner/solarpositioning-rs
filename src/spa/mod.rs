@@ -908,9 +908,11 @@ where
     F: FnMut(NaiveDate) -> Result<(NaiveDate, V)>,
 {
     let mut last = None;
+    let mut last_transit = None;
     for _ in 0..2 {
         let (transit_local_date, value) = compute(utc_date)?;
         last = Some(value);
+        last_transit = Some(transit_local_date);
         if transit_local_date == local_date {
             break;
         }
@@ -922,6 +924,7 @@ where
         };
     }
 
+    debug_assert_eq!(last_transit, Some(local_date));
     Ok((utc_date, last.expect("loop runs at least once")))
 }
 

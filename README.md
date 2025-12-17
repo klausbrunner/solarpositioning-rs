@@ -66,7 +66,7 @@ For multiple coordinates at the same time, calculate time-dependent parts once (
 ```rust
 let time_dependent = spa::spa_time_dependent_parts(datetime, 69.0).unwrap();
 for (lat, lon) in [(48.21, 16.37), (52.52, 13.40)] {
-    let pos = spa::spa_with_time_dependent_parts(&time_dependent, lat, lon, 0.0, None).unwrap();
+    let pos = spa::spa_with_time_dependent_parts(lat, lon, 0.0, None, &time_dependent).unwrap();
 }
 ```
 

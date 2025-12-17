@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Fixed
+
+- Fix missing sunrise/twilight events near midnight at timezone boundaries in `chrono` sunrise/sunset APIs.
+- Keep sunrise/sunset bracketing transit on the requested local date even when SPA wraps near UTC midnight.
+
 ## [0.4.4] - 2025-11-30
 
 ### Changed

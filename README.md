@@ -66,7 +66,7 @@ For multiple coordinates at the same time, calculate time-dependent parts once (
 ```rust
 let time_dependent = spa::spa_time_dependent_parts(datetime, 69.0).unwrap();
 for (lat, lon) in [(48.21, 16.37), (52.52, 13.40)] {
-    let pos = spa::spa_with_time_dependent_parts(&time_dependent, lat, lon, 0.0, None).unwrap();
+    let pos = spa::spa_with_time_dependent_parts(lat, lon, 0.0, None, &time_dependent).unwrap();
 }
 ```
 
@@ -87,6 +87,12 @@ match result {
     _ => { /* polar day/night */ }
 }
 ```
+
+Returned event timestamps are in the same timezone as the input `DateTime`, but can fall on the
+previous/next local calendar date when events occur near midnight (e.g., at timezone boundaries or
+for twilights).
+The UTC calculation day is chosen so that transit lands on the requested local date; sunrise/sunset
+may shift by ±1 day to keep the expected sunrise–transit–sunset order.
 
 For twilight, use `Horizon::CivilTwilight`, `Horizon::NauticalTwilight`, or `Horizon::AstronomicalTwilight`.
 

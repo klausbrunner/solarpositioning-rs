@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [0.4.5] - 2025-12-18
+
 ### Fixed
 
 - Fix missing sunrise/twilight events near midnight at timezone boundaries in `chrono` sunrise/sunset APIs.

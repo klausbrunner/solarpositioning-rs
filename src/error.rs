@@ -214,17 +214,6 @@ pub fn check_zenith_angle(zenith: f64) -> Result<f64> {
     Ok(zenith)
 }
 
-/// Check if pressure and temperature parameters are usable for refraction correction.
-#[must_use]
-pub fn check_refraction_params_usable(pressure: f64, temperature: f64) -> bool {
-    pressure.is_finite()
-        && temperature.is_finite()
-        && pressure > 0.0
-        && pressure < 3000.0
-        && temperature > -273.0
-        && temperature < 273.0
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

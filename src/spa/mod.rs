@@ -437,7 +437,8 @@ pub fn sunrise_sunset_utc_for_horizon(
 /// calendar date when events occur near midnight (e.g., at timezone boundaries or for twilights).
 /// The internal UTC calculation date is chosen so that transit falls on the requested local date.
 /// For non-UTC offsets, sunrise/sunset are shifted by full days when necessary so they bracket
-/// transit in the expected order.
+/// transit in the expected order. This bracketing is a library convenience and is not specified
+/// by the SPA paper.
 ///
 /// # Errors
 /// Returns error for invalid coordinates (latitude outside ±90°, longitude outside ±180°)
@@ -539,8 +540,18 @@ fn precompute_sunrise_sunset_for_jd_midnight(jd_midnight: JulianDate) -> (f64, [
     for (i, alpha_delta) in alpha_deltas.iter_mut().enumerate() {
         let current_jd = jd_midnight.add_days((i as f64) - 1.0);
         let current_jme = current_jd.julian_ephemeris_millennium();
-        *alpha_delta =
-            calculate_alpha_delta(current_jme, delta_psi_epsilon.delta_psi, epsilon_degrees);
+        let current_jce = current_jd.julian_ephemeris_century();
+        let current_x_terms = calculate_nutation_terms(current_jce);
+        let current_delta_psi_epsilon = calculate_delta_psi_epsilon(current_jce, &current_x_terms);
+        let current_epsilon_degrees = calculate_true_obliquity_of_ecliptic(
+            &current_jd,
+            current_delta_psi_epsilon.delta_epsilon,
+        );
+        *alpha_delta = calculate_alpha_delta(
+            current_jme,
+            current_delta_psi_epsilon.delta_psi,
+            current_epsilon_degrees,
+        );
     }
 
     (nu_degrees, alpha_deltas)
@@ -786,7 +797,8 @@ struct AlphaDelta {
 /// calendar date when events occur near midnight (e.g., at timezone boundaries or for twilights).
 /// The internal UTC calculation date is chosen so that transit falls on the requested local date.
 /// For non-UTC offsets, sunrise/sunset are shifted by full days when necessary so they bracket
-/// transit in the expected order.
+/// transit in the expected order. This bracketing is a library convenience and is not specified
+/// by the SPA paper.
 ///
 /// # Errors
 /// Returns error for invalid coordinates, dates, or computation failures.
@@ -1026,6 +1038,7 @@ fn limit_h_prime(h_prime: f64) -> f64 {
 /// calendar date when events occur near midnight (e.g., at timezone boundaries or for twilights).
 /// The internal UTC calculation date is chosen so that transit falls on the requested local date.
 /// For non-UTC offsets, sunrise is adjusted to precede transit if it would otherwise fall after it.
+/// This bracketing adjustment is a library convenience and is not specified by the SPA paper.
 ///
 /// # Returns
 /// Iterator over `Result<(Horizon, SunriseResult)>`

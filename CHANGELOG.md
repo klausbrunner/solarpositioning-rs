@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- SPA sunrise/sunset A.2.2 interpolation recomputes nutation/obliquity per day (pedantic fix for consistency, minimal impact on results).
+
 ## [0.4.5] - 2025-12-18
 
 ### Fixed

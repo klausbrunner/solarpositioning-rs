@@ -80,7 +80,8 @@ impl JulianDate {
     /// Julian date or error if the date is invalid
     ///
     /// # Errors
-    /// Returns error if any date/time component is outside valid ranges (month 1-12, day 1-31, hour 0-23, minute 0-59, second 0-59.999).
+    /// Returns error if any date/time component is outside valid ranges (month 1-12, day 1-31,
+    /// hour 0-23, minute 0-59, second 0-59.999) or if `delta_t` is not finite.
     ///
     /// # Example
     /// ```
@@ -114,6 +115,9 @@ impl JulianDate {
             return Err(Error::invalid_datetime(
                 "second must be between 0 and 59.999...",
             ));
+        }
+        if !delta_t.is_finite() {
+            return Err(Error::invalid_datetime("delta_t must be finite"));
         }
 
         if day > days_in_month(year, month, day)? {
@@ -535,6 +539,9 @@ mod tests {
         assert!(JulianDate::from_utc(2024, 1, 1, 24, 0, 0.0, 0.0).is_err()); // Invalid hour
         assert!(JulianDate::from_utc(2024, 1, 1, 0, 60, 0.0, 0.0).is_err()); // Invalid minute
         assert!(JulianDate::from_utc(2024, 1, 1, 0, 0, 60.0, 0.0).is_err()); // Invalid second
+        assert!(JulianDate::from_utc(2024, 1, 1, 0, 0, 0.0, f64::NAN).is_err()); // Non-finite delta_t
+        assert!(JulianDate::from_utc(2024, 1, 1, 0, 0, 0.0, f64::INFINITY).is_err());
+        // Non-finite delta_t
     }
 
     #[test]

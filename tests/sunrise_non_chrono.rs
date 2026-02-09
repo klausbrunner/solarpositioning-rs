@@ -125,6 +125,12 @@ fn test_invalid_inputs() {
     // Invalid day
     let result = spa::sunrise_sunset_utc(2023, 6, 32, 0.0, 0.0, 69.0, -0.833);
     assert!(result.is_err());
+
+    // Invalid delta_t (non-finite)
+    let result = spa::sunrise_sunset_utc(2023, 6, 21, 0.0, 0.0, f64::NAN, -0.833);
+    assert!(result.is_err());
+    let result = spa::sunrise_sunset_utc(2023, 6, 21, 0.0, 0.0, f64::INFINITY, -0.833);
+    assert!(result.is_err());
 }
 
 #[test]

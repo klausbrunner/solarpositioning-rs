@@ -355,7 +355,13 @@ pub fn sunrise_sunset_utc(
     let jd_midnight = JulianDate::from_utc(year, month, day, 0, 0, 0.0, delta_t)?;
 
     // Calculate sunrise/sunset using core algorithm
-    calculate_sunrise_sunset_core(jd_midnight, latitude, longitude, delta_t, elevation_angle)
+    Ok(calculate_sunrise_sunset_core(
+        jd_midnight,
+        latitude,
+        longitude,
+        delta_t,
+        elevation_angle,
+    ))
 }
 
 /// Calculate sunrise, solar transit, and sunset times for a specific horizon type.
@@ -475,7 +481,10 @@ pub fn sunrise_sunset<Tz: TimeZone>(
 
     let tz = date.timezone();
     let local_date = date.date_naive();
-    let base_utc_date_guess = utc_date_for_local_calendar_day(&date);
+    // SPA sunrise/sunset (Appendix A.2) is defined relative to 0 UT (midnight UTC) of a UTC date.
+    // This is an initial guess for the UTC calculation date and may shift by ±1 day so transit
+    // lands on the requested local calendar date.
+    let base_utc_date_guess = date.date_naive();
     let (_base_utc_date, result) =
         select_utc_date_by_transit(local_date, base_utc_date_guess, |d| {
             let hours_result = sunrise_sunset_utc(
@@ -570,7 +579,7 @@ fn calculate_sunrise_sunset_hours_with_precomputed(
     let polar_type = check_polar_conditions_type(latitude, elevation_angle, alpha_deltas[1].delta);
 
     // Calculate approximate times and apply corrections
-    let (m_values, _h0_degrees) =
+    let m_values =
         calculate_approximate_times(m0, latitude, elevation_angle, alpha_deltas[1].delta);
 
     // Apply final corrections to get accurate times (as fractions of day)
@@ -608,23 +617,22 @@ fn calculate_sunrise_sunset_hours_with_precomputed(
 /// Core sunrise/sunset calculation that returns times as fractions of day.
 ///
 /// This is the shared implementation used by both chrono and non-chrono APIs.
-#[allow(clippy::unnecessary_wraps)]
 fn calculate_sunrise_sunset_core(
     jd_midnight: JulianDate,
     latitude: f64,
     longitude: f64,
     delta_t: f64,
     elevation_angle: f64,
-) -> Result<crate::SunriseResult<crate::HoursUtc>> {
+) -> crate::SunriseResult<crate::HoursUtc> {
     let (nu_degrees, alpha_deltas) = precompute_sunrise_sunset_for_jd_midnight(jd_midnight);
-    Ok(calculate_sunrise_sunset_hours_with_precomputed(
+    calculate_sunrise_sunset_hours_with_precomputed(
         latitude,
         longitude,
         delta_t,
         elevation_angle,
         nu_degrees,
         alpha_deltas,
-    ))
+    )
 }
 
 // ============================================================================
@@ -667,7 +675,7 @@ fn calculate_approximate_times(
     latitude: f64,
     elevation_angle: f64,
     delta1: f64,
-) -> ([f64; 3], f64) {
+) -> [f64; 3] {
     let phi = degrees_to_radians(latitude);
     let delta1_rad = degrees_to_radians(delta1);
     let elevation_rad = degrees_to_radians(elevation_angle);
@@ -675,14 +683,14 @@ fn calculate_approximate_times(
     let acos_arg =
         mul_add(sin(phi), -sin(delta1_rad), sin(elevation_rad)) / (cos(phi) * cos(delta1_rad));
     let h0 = acos(acos_arg);
-    let h0_degrees = radians_to_degrees(h0).min(180.0);
+    let h0_degrees = radians_to_degrees(h0);
 
     let mut m = [0.0; 3];
     m[0] = normalize_to_unit_range(m0);
     m[1] = normalize_to_unit_range(m0 - h0_degrees / 360.0);
     m[2] = normalize_to_unit_range(m0 + h0_degrees / 360.0);
 
-    (m, h0_degrees)
+    m
 }
 
 /// A.2.8-15. Calculate final accurate time fractions using corrections
@@ -902,15 +910,6 @@ fn normalize_to_unit_range(val: f64) -> f64 {
 }
 
 #[cfg(feature = "chrono")]
-fn utc_date_for_local_calendar_day<Tz: TimeZone>(datetime: &DateTime<Tz>) -> NaiveDate {
-    // SPA sunrise/sunset (Appendix A.2) is defined relative to 0 UT (midnight UTC) of a UTC date.
-    //
-    // This returns an initial guess for the UTC calculation date. Callers may adjust it by ±1 day
-    // so that solar transit falls on the requested local calendar date.
-    datetime.date_naive()
-}
-
-#[cfg(feature = "chrono")]
 fn select_utc_date_by_transit<V, F>(
     local_date: NaiveDate,
     mut utc_date: NaiveDate,
@@ -1092,7 +1091,10 @@ where
 {
     let tz = date.timezone();
     let local_date = date.date_naive();
-    let base_utc_date_guess = utc_date_for_local_calendar_day(&date);
+    // SPA sunrise/sunset (Appendix A.2) is defined relative to 0 UT (midnight UTC) of a UTC date.
+    // This is an initial guess for the UTC calculation date and may shift by ±1 day so transit
+    // lands on the requested local calendar date.
+    let base_utc_date_guess = date.date_naive();
 
     // Pre-calculate common values once for efficiency.
     let precomputed = (|| -> Result<_> {

@@ -165,6 +165,17 @@ pub fn check_coordinates(latitude: f64, longitude: f64) -> Result<()> {
     Ok(())
 }
 
+/// Validates an elevation angle is finite and within the valid range (-90 to +90 degrees).
+///
+/// # Errors
+/// Returns `InvalidElevationAngle` if elevation is not finite or outside -90 to +90 degrees.
+pub fn check_elevation_angle(elevation_angle: f64) -> Result<()> {
+    if !elevation_angle.is_finite() || !(-90.0..=90.0).contains(&elevation_angle) {
+        return Err(Error::invalid_elevation_angle(elevation_angle));
+    }
+    Ok(())
+}
+
 /// Validates pressure is positive and reasonable for atmospheric calculations.
 ///
 /// # Errors
@@ -255,6 +266,18 @@ mod tests {
         assert!(check_pressure(3000.0).is_err());
         assert!(check_pressure(f64::NAN).is_err());
         assert!(check_pressure(f64::INFINITY).is_err());
+    }
+
+    #[test]
+    fn test_elevation_angle_validation() {
+        assert!(check_elevation_angle(-90.0).is_ok());
+        assert!(check_elevation_angle(0.0).is_ok());
+        assert!(check_elevation_angle(90.0).is_ok());
+
+        assert!(check_elevation_angle(-91.0).is_err());
+        assert!(check_elevation_angle(91.0).is_err());
+        assert!(check_elevation_angle(f64::NAN).is_err());
+        assert!(check_elevation_angle(f64::INFINITY).is_err());
     }
 
     #[test]

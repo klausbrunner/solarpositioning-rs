@@ -1,8 +1,10 @@
 //! Core data types for solar positioning calculations.
 
-use crate::error::{check_azimuth, check_pressure, check_temperature, check_zenith_angle};
+use crate::error::{
+    check_azimuth, check_elevation_angle, check_pressure, check_temperature, check_zenith_angle,
+};
 use crate::math::floor;
-use crate::{Error, Result};
+use crate::Result;
 
 /// Predefined elevation angles for sunrise/sunset calculations.
 ///
@@ -39,11 +41,9 @@ impl Horizon {
     /// Creates a custom horizon with the specified elevation angle.
     ///
     /// # Errors
-    /// Returns `InvalidElevationAngle` if elevation is outside -90 to +90 degrees.
+    /// Returns `InvalidElevationAngle` if elevation is not finite or outside -90 to +90 degrees.
     pub fn custom(elevation_degrees: f64) -> Result<Self> {
-        if !(-90.0..=90.0).contains(&elevation_degrees) {
-            return Err(Error::invalid_elevation_angle(elevation_degrees));
-        }
+        check_elevation_angle(elevation_degrees)?;
         Ok(Self::Custom(elevation_degrees))
     }
 }
@@ -279,24 +279,16 @@ impl HoursUtc {
             return (0, hours);
         }
 
-        let mut day_offset_raw = floor(hours / 24.0);
-        let mut normalized_hours = hours - day_offset_raw * 24.0;
-
-        if normalized_hours < 0.0 {
-            normalized_hours += 24.0;
-            day_offset_raw -= 1.0;
-        } else if normalized_hours >= 24.0 {
-            normalized_hours -= 24.0;
-            day_offset_raw += 1.0;
-        }
-
-        let day_offset = if day_offset_raw >= f64::from(i32::MAX) {
-            i32::MAX
-        } else if day_offset_raw <= f64::from(i32::MIN) {
-            i32::MIN
-        } else {
-            day_offset_raw as i32
+        let day_offset_raw = floor(hours / 24.0);
+        let normalized_hours = {
+            let h = hours % 24.0;
+            if h < 0.0 {
+                h + 24.0
+            } else {
+                h
+            }
         };
+        let day_offset = day_offset_raw.clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as i32;
 
         (day_offset, normalized_hours)
     }

@@ -43,7 +43,7 @@ fn main() {
 
     // Calculate using Grena3 (faster, less accurate)
     // First calculate the t parameter for Grena3
-    let t = grena3::calc_t_from_components(2024, 6, 21, 12, 0, 0.0);
+    let t = grena3::calc_t_from_components(2024, 6, 21, 12, 0, 0.0).expect("Valid date");
 
     let grena3_position = grena3::solar_position_from_t(
         t,

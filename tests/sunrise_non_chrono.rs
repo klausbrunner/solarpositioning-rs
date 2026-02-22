@@ -131,6 +131,12 @@ fn test_invalid_inputs() {
     assert!(result.is_err());
     let result = spa::sunrise_sunset_utc(2023, 6, 21, 0.0, 0.0, f64::INFINITY, -0.833);
     assert!(result.is_err());
+
+    // Invalid elevation angle
+    let result = spa::sunrise_sunset_utc(2023, 6, 21, 0.0, 0.0, 69.0, f64::NAN);
+    assert!(result.is_err());
+    let result = spa::sunrise_sunset_utc(2023, 6, 21, 0.0, 0.0, 69.0, 91.0);
+    assert!(result.is_err());
 }
 
 #[test]

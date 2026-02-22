@@ -80,7 +80,7 @@ pub fn solar_position<Tz: TimeZone>(
     refraction: Option<RefractionCorrection>,
 ) -> Result<SolarPosition> {
     // Calculate t (days since 2000-01-01 12:00:00 TT)
-    let t = calc_t(&datetime);
+    let t = calc_t(&datetime)?;
     solar_position_from_t(t, latitude, longitude, delta_t, refraction)
 }
 
@@ -178,9 +178,8 @@ pub fn solar_position_from_t(
 ///
 /// This is the core calculation that doesn't require chrono.
 ///
-/// # Panics
-/// Panics if month or day values don't fit in i32 (extremely unlikely with valid dates).
-#[must_use]
+/// # Errors
+/// Returns error if date/time components are outside valid ranges or not finite.
 pub fn calc_t_from_components(
     year: i32,
     month: u32,
@@ -188,10 +187,35 @@ pub fn calc_t_from_components(
     hour: u32,
     minute: u32,
     second: f64,
-) -> f64 {
-    let mut m = i32::try_from(month).expect("month should fit in i32");
+) -> Result<f64> {
+    if !(1..=12).contains(&month) {
+        return Err(crate::Error::invalid_datetime(
+            "month must be between 1 and 12",
+        ));
+    }
+    if !(1..=31).contains(&day) {
+        return Err(crate::Error::invalid_datetime(
+            "day must be between 1 and 31",
+        ));
+    }
+    if hour > 23 {
+        return Err(crate::Error::invalid_datetime(
+            "hour must be between 0 and 23",
+        ));
+    }
+    if minute > 59 {
+        return Err(crate::Error::invalid_datetime(
+            "minute must be between 0 and 59",
+        ));
+    }
+    if !(0.0..60.0).contains(&second) {
+        return Err(crate::Error::invalid_datetime(
+            "second must be between 0 and 59.999...",
+        ));
+    }
+
+    let mut m = month;
     let mut y = year;
-    let d = i32::try_from(day).expect("day should fit in i32");
     let h = f64::from(hour) + f64::from(minute) / 60.0 + second / 3600.0;
 
     if m <= 2 {
@@ -199,16 +223,18 @@ pub fn calc_t_from_components(
         y -= 1;
     }
 
-    floor(365.25 * f64::from(y - 2000)) + floor(30.6001 * f64::from(m + 1))
-        - floor(0.01 * f64::from(y))
-        + f64::from(d)
-        + 0.0416667 * h
-        - 21958.0
+    Ok(
+        floor(365.25 * f64::from(y - 2000)) + floor(30.6001 * f64::from(m + 1))
+            - floor(0.01 * f64::from(y))
+            + f64::from(day)
+            + 0.0416667 * h
+            - 21958.0,
+    )
 }
 
 /// Calculate t parameter (days since 2000-01-01 12:00:00 TT)
 #[cfg(feature = "chrono")]
-fn calc_t<Tz: TimeZone>(datetime: &DateTime<Tz>) -> f64 {
+fn calc_t<Tz: TimeZone>(datetime: &DateTime<Tz>) -> Result<f64> {
     // Convert to UTC for proper astronomical calculations
     let utc_datetime = datetime.with_timezone(&chrono::Utc);
     calc_t_from_components(
@@ -279,14 +305,14 @@ mod tests {
         let datetime = "2023-06-21T12:00:00-07:00"
             .parse::<DateTime<FixedOffset>>()
             .unwrap();
-        let t = calc_t(&datetime);
+        let t = calc_t(&datetime).unwrap();
 
         // The Grena3 algorithm uses a specific reference point that may result in negative values
         // This is correct behavior - just ensure the calculation is consistent
         assert!(t.is_finite(), "t should be finite");
 
         // Test that the calculation is stable
-        let t2 = calc_t(&datetime);
+        let t2 = calc_t(&datetime).unwrap();
         assert!(
             (t - t2).abs() < f64::EPSILON,
             "calc_t should be deterministic"
@@ -296,7 +322,7 @@ mod tests {
         let datetime2 = "2023-06-22T12:00:00Z"
             .parse::<DateTime<FixedOffset>>()
             .unwrap();
-        let t3 = calc_t(&datetime2);
+        let t3 = calc_t(&datetime2).unwrap();
         assert!(
             (t - t3).abs() > 0.5,
             "Different dates should give different t values"
@@ -305,7 +331,16 @@ mod tests {
 
     #[test]
     fn test_calc_t_pre_2000_flooring() {
-        let t = calc_t_from_components(1999, 12, 31, 0, 0, 0.0);
+        let t = calc_t_from_components(1999, 12, 31, 0, 0, 0.0).unwrap();
         assert_eq!(t, -21915.0);
+    }
+
+    #[test]
+    fn test_calc_t_validation() {
+        assert!(calc_t_from_components(2024, 13, 1, 0, 0, 0.0).is_err());
+        assert!(calc_t_from_components(2024, 1, 32, 0, 0, 0.0).is_err());
+        assert!(calc_t_from_components(2024, 1, 1, 24, 0, 0.0).is_err());
+        assert!(calc_t_from_components(2024, 1, 1, 0, 60, 0.0).is_err());
+        assert!(calc_t_from_components(2024, 1, 1, 0, 0, 60.0).is_err());
     }
 }

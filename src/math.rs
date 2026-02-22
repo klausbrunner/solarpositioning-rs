@@ -2,9 +2,6 @@
 
 #![allow(clippy::many_single_char_names)]
 
-#[cfg(not(feature = "std"))]
-use libm;
-
 /// Mathematical constants
 pub const PI: f64 = core::f64::consts::PI;
 

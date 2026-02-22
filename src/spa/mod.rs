@@ -10,9 +10,9 @@
 #![allow(clippy::many_single_char_names)]
 #![allow(clippy::unreadable_literal)]
 
-use crate::error::check_coordinates;
+use crate::error::{check_coordinates, check_elevation_angle};
 use crate::math::{
-    acos, asin, atan, atan2, cos, degrees_to_radians, floor, mul_add, normalize_degrees_0_to_360,
+    acos, asin, atan, atan2, cos, degrees_to_radians, mul_add, normalize_degrees_0_to_360,
     polynomial, powi, radians_to_degrees, sin, tan,
 };
 use crate::time::JulianDate;
@@ -320,7 +320,7 @@ fn calculate_geocentric_sun_declination(beta_rad: f64, epsilon_rad: f64, lambda_
 /// `SunriseResult<HoursUtc>` with times as hours since midnight UTC
 ///
 /// # Errors
-/// Returns error for invalid date components or coordinates
+/// Returns error for invalid date components, coordinates, or elevation angle outside -90° to +90°
 ///
 /// # Example
 /// ```
@@ -350,6 +350,7 @@ pub fn sunrise_sunset_utc(
     elevation_angle: f64,
 ) -> Result<crate::SunriseResult<crate::HoursUtc>> {
     check_coordinates(latitude, longitude)?;
+    check_elevation_angle(elevation_angle)?;
 
     // Create Julian date for midnight UTC (0 UT) of the given date
     let jd_midnight = JulianDate::from_utc(year, month, day, 0, 0, 0.0, delta_t)?;
@@ -382,7 +383,8 @@ pub fn sunrise_sunset_utc(
 /// `SunriseResult<HoursUtc>` with times as hours since midnight UTC
 ///
 /// # Errors
-/// Returns error for invalid coordinates, dates, or computation failures.
+/// Returns error for invalid coordinates, dates, or invalid horizon elevation (for
+/// `Horizon::Custom` values outside -90° to +90° or non-finite).
 ///
 /// # Example
 /// ```rust
@@ -447,7 +449,8 @@ pub fn sunrise_sunset_utc_for_horizon(
 /// by the SPA paper.
 ///
 /// # Errors
-/// Returns error for invalid coordinates (latitude outside ±90°, longitude outside ±180°)
+/// Returns error for invalid coordinates (latitude outside ±90°, longitude outside ±180°) or
+/// invalid elevation angle (outside -90° to +90° or non-finite).
 ///
 /// # Panics
 /// Does not panic.
@@ -809,7 +812,8 @@ struct AlphaDelta {
 /// by the SPA paper.
 ///
 /// # Errors
-/// Returns error for invalid coordinates, dates, or computation failures.
+/// Returns error for invalid coordinates, dates, or invalid horizon elevation (for
+/// `Horizon::Custom` values outside -90° to +90° or non-finite).
 ///
 /// # Panics
 /// Does not panic.
@@ -900,8 +904,7 @@ fn calculate_alpha_delta(jme: f64, delta_psi: f64, epsilon_degrees: f64) -> Alph
 
 /// Normalize value to [0, 1) range using the same logic as the removed `limit_to` function
 fn normalize_to_unit_range(val: f64) -> f64 {
-    let divided = val;
-    let limited = divided - floor(divided);
+    let limited = val % 1.0;
     if limited < 0.0 {
         limited + 1.0
     } else {
@@ -918,25 +921,20 @@ fn select_utc_date_by_transit<V, F>(
 where
     F: FnMut(NaiveDate) -> Result<(NaiveDate, V)>,
 {
-    let mut last = None;
-    let mut last_transit = None;
-    for _ in 0..2 {
-        let (transit_local_date, value) = compute(utc_date)?;
-        last = Some(value);
-        last_transit = Some(transit_local_date);
-        if transit_local_date == local_date {
-            break;
-        }
-
-        utc_date = if transit_local_date > local_date {
-            utc_date.pred_opt().unwrap_or(utc_date)
-        } else {
-            utc_date.succ_opt().unwrap_or(utc_date)
-        };
+    let (transit_local_date, value) = compute(utc_date)?;
+    if transit_local_date == local_date {
+        return Ok((utc_date, value));
     }
 
-    debug_assert_eq!(last_transit, Some(local_date));
-    Ok((utc_date, last.expect("loop runs at least once")))
+    utc_date = if transit_local_date > local_date {
+        utc_date.pred_opt().unwrap_or(utc_date)
+    } else {
+        utc_date.succ_opt().unwrap_or(utc_date)
+    };
+
+    let (transit_local_date, value) = compute(utc_date)?;
+    debug_assert_eq!(transit_local_date, local_date);
+    Ok((utc_date, value))
 }
 
 #[cfg(feature = "chrono")]
@@ -1009,12 +1007,15 @@ fn limit_if_necessary(val: f64) -> f64 {
 
 /// Limit H' values according to A.2.11
 fn limit_h_prime(h_prime: f64) -> f64 {
-    let normalized = h_prime / 360.0;
-    let limited = 360.0 * (normalized - floor(normalized));
-
-    if limited < -180.0 {
-        limited + 360.0
-    } else if limited > 180.0 {
+    let limited = {
+        let v = h_prime % 360.0;
+        if v < 0.0 {
+            v + 360.0
+        } else {
+            v
+        }
+    };
+    if limited > 180.0 {
         limited - 360.0
     } else {
         limited

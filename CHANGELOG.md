@@ -2,9 +2,14 @@
 
 ## Unreleased
 
+### Changed
+
+- **BREAKING**: `grena3::calc_t_from_components()` now returns `Result<f64>` instead of `f64` and validates input date/time components.
+
 ### Fixed
 
 - SPA sunrise/sunset A.2.2 interpolation recomputes nutation/obliquity per day (pedantic fix for consistency, minimal impact on results).
+- Reject invalid/non-finite sunrise/sunset elevation angles with `Error::InvalidElevationAngle` instead of producing invalid outputs.
 
 ## [0.4.5] - 2025-12-18
 

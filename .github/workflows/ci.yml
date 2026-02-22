@@ -3,7 +3,7 @@ name: CI
 on:
   push:
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 env:
   CARGO_TERM_COLOR: always
@@ -17,16 +17,16 @@ jobs:
     name: Code Quality
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v5
-    - uses: actions-rust-lang/setup-rust-toolchain@v1
-      with:
-        components: rustfmt, clippy
-    - uses: Swatinem/rust-cache@v2
-    - run: cargo fmt -- --check
-    - run: cargo clippy --all-targets --all-features -- -D clippy::correctness -D clippy::suspicious -D clippy::complexity -D clippy::perf -D clippy::style -A clippy::approx_constant -A clippy::needless_range_loop -A clippy::too_many_arguments -A clippy::unnecessary_wraps -A clippy::suboptimal_flops
-      env:
-        RUSTFLAGS: ""
-    - run: cargo doc --all-features --no-deps
+      - uses: actions/checkout@v6
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt -- --check
+      - run: cargo clippy --all-targets --all-features -- -D clippy::correctness -D clippy::suspicious -D clippy::complexity -D clippy::perf -D clippy::style -A clippy::approx_constant -A clippy::needless_range_loop -A clippy::too_many_arguments -A clippy::unnecessary_wraps -A clippy::suboptimal_flops
+        env:
+          RUSTFLAGS: ""
+      - run: cargo doc --all-features --no-deps
 
   test:
     name: Test Suite
@@ -41,21 +41,21 @@ jobs:
             rust: 1.70.0
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v5
-    - uses: actions-rust-lang/setup-rust-toolchain@v1
-      with:
-        toolchain: ${{ matrix.rust }}
-        components: rustfmt, clippy
-    - uses: Swatinem/rust-cache@v2
-    - name: Run tests (skip on MSRV due to dev-dependencies)
-      if: matrix.rust == 'stable'
-      run: cargo test --all-features
-    - name: Run doc tests (skip on MSRV due to dev-dependencies)
-      if: matrix.rust == 'stable'
-      run: cargo test --doc
-    - name: Check library builds on MSRV
-      if: matrix.rust != 'stable'
-      run: cargo check --lib --all-features
+      - uses: actions/checkout@v5
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Run tests (skip on MSRV due to dev-dependencies)
+        if: matrix.rust == 'stable'
+        run: cargo test --all-features
+      - name: Run doc tests (skip on MSRV due to dev-dependencies)
+        if: matrix.rust == 'stable'
+        run: cargo test --doc
+      - name: Check library builds on MSRV
+        if: matrix.rust != 'stable'
+        run: cargo check --lib --all-features
 
   features:
     name: Feature Combinations
@@ -73,9 +73,9 @@ jobs:
           - features: "--no-default-features --features 'libm,chrono'"
             test: true
     steps:
-    - uses: actions/checkout@v5
-    - uses: actions-rust-lang/setup-rust-toolchain@v1
-    - uses: Swatinem/rust-cache@v2
-    - run: cargo check ${{ matrix.features }}
-    - if: matrix.test
-      run: cargo test --lib ${{ matrix.features }}
+      - uses: actions/checkout@v6
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check ${{ matrix.features }}
+      - if: matrix.test
+        run: cargo test --lib ${{ matrix.features }}

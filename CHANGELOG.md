@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [0.5.0] - 2026-02-22
+
 ### Changed
 
 - **BREAKING**: `grena3::calc_t_from_components()` now returns `Result<f64>` instead of `f64` and validates input date/time components.

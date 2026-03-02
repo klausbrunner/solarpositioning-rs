@@ -1,5 +1,7 @@
 //! SPA accuracy tests using reference data from NREL's reference implementation.
 
+#![cfg(all(feature = "chrono", feature = "std"))]
+
 use chrono::{DateTime, FixedOffset, TimeZone, Utc};
 use csv::ReaderBuilder;
 use solar_positioning::{spa, RefractionCorrection};

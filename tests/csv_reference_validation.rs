@@ -1,5 +1,7 @@
 //! Comprehensive validation against the same CSV reference data used in the Java version.
 
+#![cfg(feature = "chrono")]
+
 use chrono::{DateTime, FixedOffset, TimeZone, Utc};
 use solar_positioning::{grena3, spa, RefractionCorrection};
 use std::fs::File;

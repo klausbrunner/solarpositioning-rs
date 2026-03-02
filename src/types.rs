@@ -3,7 +3,7 @@
 use crate::error::{
     check_azimuth, check_elevation_angle, check_pressure, check_temperature, check_zenith_angle,
 };
-use crate::math::floor;
+use crate::math::{floor, rem_euclid};
 use crate::Result;
 
 /// Predefined elevation angles for sunrise/sunset calculations.
@@ -280,14 +280,7 @@ impl HoursUtc {
         }
 
         let day_offset_raw = floor(hours / 24.0);
-        let normalized_hours = {
-            let h = hours % 24.0;
-            if h < 0.0 {
-                h + 24.0
-            } else {
-                h
-            }
-        };
+        let normalized_hours = rem_euclid(hours, 24.0);
         let day_offset = day_offset_raw.clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as i32;
 
         (day_offset, normalized_hours)

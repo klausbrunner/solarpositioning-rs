@@ -13,12 +13,10 @@
 use crate::error::{check_coordinates, check_elevation_angle};
 use crate::math::{
     acos, asin, atan, atan2, cos, degrees_to_radians, mul_add, normalize_degrees_0_to_360,
-    polynomial, powi, radians_to_degrees, sin, tan,
+    polynomial, powi, radians_to_degrees, rem_euclid, sin, tan,
 };
 use crate::time::JulianDate;
-#[cfg(feature = "chrono")]
-use crate::Horizon;
-use crate::{RefractionCorrection, Result, SolarPosition};
+use crate::{Horizon, RefractionCorrection, Result, SolarPosition};
 
 pub mod coefficients;
 use coefficients::{
@@ -27,9 +25,6 @@ use coefficients::{
 
 #[cfg(feature = "chrono")]
 use chrono::{offset::Offset, DateTime, Datelike, NaiveDate, TimeZone};
-
-/// Standard sunrise/sunset elevation angle (accounts for refraction and sun's radius).
-const SUNRISE_SUNSET_ANGLE: f64 = -0.83337;
 
 /// Aberration constant in arcseconds.
 const ABERRATION_CONSTANT: f64 = -20.4898;
@@ -220,7 +215,11 @@ fn calculate_delta_psi_epsilon(jce: f64, x: &[f64]) -> DeltaPsiEpsilon {
     let mut delta_epsilon = 0.0;
 
     for (i, pe_term) in TERMS_PE.iter().enumerate() {
-        let xj_yterm_sum = degrees_to_radians(calculate_xj_yterm_sum(i, x));
+        let mut xj_yterm_sum = 0.0;
+        for (j, &x_val) in x.iter().enumerate() {
+            xj_yterm_sum += x_val * f64::from(TERMS_Y[i][j]);
+        }
+        let xj_yterm_sum = degrees_to_radians(xj_yterm_sum);
 
         // Use Math.fma equivalent: a * b + c
         let delta_psi_contrib = mul_add(pe_term[1], jce, pe_term[0]) * sin(xj_yterm_sum);
@@ -234,15 +233,6 @@ fn calculate_delta_psi_epsilon(jce: f64, x: &[f64]) -> DeltaPsiEpsilon {
         delta_psi: delta_psi / 36_000_000.0,
         delta_epsilon: delta_epsilon / 36_000_000.0,
     }
-}
-
-/// Calculate sum of X[j] * Y[i][j] for nutation.
-fn calculate_xj_yterm_sum(i: usize, x: &[f64]) -> f64 {
-    let mut sum = 0.0;
-    for (j, &x_val) in x.iter().enumerate() {
-        sum += x_val * f64::from(TERMS_Y[i][j]);
-    }
-    sum
 }
 
 /// Calculate true obliquity of the ecliptic.
@@ -487,10 +477,10 @@ pub fn sunrise_sunset<Tz: TimeZone>(
     // SPA sunrise/sunset (Appendix A.2) is defined relative to 0 UT (midnight UTC) of a UTC date.
     // This is an initial guess for the UTC calculation date and may shift by ±1 day so transit
     // lands on the requested local calendar date.
-    let base_utc_date_guess = date.date_naive();
+    let base_utc_date_guess = local_date;
     let (_base_utc_date, result) =
         select_utc_date_by_transit(local_date, base_utc_date_guess, |d| {
-            let hours_result = sunrise_sunset_utc(
+            let converted = match sunrise_sunset_utc(
                 d.year(),
                 d.month(),
                 d.day(),
@@ -498,9 +488,7 @@ pub fn sunrise_sunset<Tz: TimeZone>(
                 longitude,
                 delta_t,
                 elevation_angle,
-            )?;
-
-            let converted = match hours_result {
+            )? {
                 crate::SunriseResult::RegularDay {
                     sunrise,
                     transit,
@@ -518,11 +506,7 @@ pub fn sunrise_sunset<Tz: TimeZone>(
                 },
             };
 
-            let transit_local_date = match &converted {
-                crate::SunriseResult::RegularDay { transit, .. }
-                | crate::SunriseResult::AllDay { transit }
-                | crate::SunriseResult::AllNight { transit } => transit.date_naive(),
-            };
+            let transit_local_date = converted.transit().date_naive();
 
             Ok((transit_local_date, converted))
         })?;
@@ -577,15 +561,35 @@ fn calculate_sunrise_sunset_hours_with_precomputed(
     nu_degrees: f64,
     alpha_deltas: [AlphaDelta; 3],
 ) -> crate::SunriseResult<crate::HoursUtc> {
-    // Calculate initial transit time and check for polar conditions
     let m0 = (alpha_deltas[1].alpha - longitude - nu_degrees) / 360.0;
-    let polar_type = check_polar_conditions_type(latitude, elevation_angle, alpha_deltas[1].delta);
+    let transit_m = normalize_to_unit_range(m0);
+    let phi = degrees_to_radians(latitude);
+    let delta1_rad = degrees_to_radians(alpha_deltas[1].delta);
+    let elevation_rad = degrees_to_radians(elevation_angle);
+    let acos_arg =
+        mul_add(sin(phi), -sin(delta1_rad), sin(elevation_rad)) / (cos(phi) * cos(delta1_rad));
 
-    // Calculate approximate times and apply corrections
-    let m_values =
-        calculate_approximate_times(m0, latitude, elevation_angle, alpha_deltas[1].delta);
+    let polar_transit_hours =
+        calculate_transit_hours(transit_m, longitude, delta_t, nu_degrees, &alpha_deltas);
 
-    // Apply final corrections to get accurate times (as fractions of day)
+    if acos_arg < -1.0 {
+        return crate::SunriseResult::AllDay {
+            transit: polar_transit_hours,
+        };
+    }
+    if acos_arg > 1.0 {
+        return crate::SunriseResult::AllNight {
+            transit: polar_transit_hours,
+        };
+    }
+
+    let h0_degrees = radians_to_degrees(acos(acos_arg));
+    let m_values = [
+        transit_m,
+        normalize_to_unit_range(m0 - h0_degrees / 360.0),
+        normalize_to_unit_range(m0 + h0_degrees / 360.0),
+    ];
+
     let (t_frac, r_frac, s_frac) = calculate_final_time_fractions(
         m_values,
         nu_degrees,
@@ -596,24 +600,14 @@ fn calculate_sunrise_sunset_hours_with_precomputed(
         alpha_deltas,
     );
 
-    // Convert fractions to hours (0-24+, can be negative or > 24)
     let transit_hours = crate::HoursUtc::from_hours(t_frac * 24.0);
     let sunrise_hours = crate::HoursUtc::from_hours(r_frac * 24.0);
     let sunset_hours = crate::HoursUtc::from_hours(s_frac * 24.0);
 
-    // Return appropriate result type based on polar conditions
-    match polar_type {
-        Some(PolarType::AllDay) => crate::SunriseResult::AllDay {
-            transit: transit_hours,
-        },
-        Some(PolarType::AllNight) => crate::SunriseResult::AllNight {
-            transit: transit_hours,
-        },
-        None => crate::SunriseResult::RegularDay {
-            sunrise: sunrise_hours,
-            transit: transit_hours,
-            sunset: sunset_hours,
-        },
+    crate::SunriseResult::RegularDay {
+        sunrise: sunrise_hours,
+        transit: transit_hours,
+        sunset: sunset_hours,
     }
 }
 
@@ -643,57 +637,18 @@ fn calculate_sunrise_sunset_core(
 // Core functions work without chrono, chrono-specific wrappers separate
 // ============================================================================
 
-/// Enum for polar condition types
-#[derive(Debug, Clone, Copy)]
-enum PolarType {
-    AllDay,
-    AllNight,
-}
-
-/// Check for polar day/night conditions and return the type
-fn check_polar_conditions_type(
-    latitude: f64,
-    elevation_angle: f64,
-    delta1: f64,
-) -> Option<PolarType> {
-    let phi = degrees_to_radians(latitude);
-    let elevation_rad = degrees_to_radians(elevation_angle);
-    let delta1_rad = degrees_to_radians(delta1);
-
-    let acos_arg =
-        mul_add(sin(phi), -sin(delta1_rad), sin(elevation_rad)) / (cos(phi) * cos(delta1_rad));
-
-    if acos_arg < -1.0 {
-        Some(PolarType::AllDay)
-    } else if acos_arg > 1.0 {
-        Some(PolarType::AllNight)
-    } else {
-        None
-    }
-}
-
-/// A.2.5-6. Calculate approximate times for transit, sunrise, sunset
-fn calculate_approximate_times(
-    m0: f64,
-    latitude: f64,
-    elevation_angle: f64,
-    delta1: f64,
-) -> [f64; 3] {
-    let phi = degrees_to_radians(latitude);
-    let delta1_rad = degrees_to_radians(delta1);
-    let elevation_rad = degrees_to_radians(elevation_angle);
-
-    let acos_arg =
-        mul_add(sin(phi), -sin(delta1_rad), sin(elevation_rad)) / (cos(phi) * cos(delta1_rad));
-    let h0 = acos(acos_arg);
-    let h0_degrees = radians_to_degrees(h0);
-
-    let mut m = [0.0; 3];
-    m[0] = normalize_to_unit_range(m0);
-    m[1] = normalize_to_unit_range(m0 - h0_degrees / 360.0);
-    m[2] = normalize_to_unit_range(m0 + h0_degrees / 360.0);
-
-    m
+fn calculate_transit_hours(
+    transit_m: f64,
+    longitude: f64,
+    delta_t: f64,
+    nu_degrees: f64,
+    alpha_deltas: &[AlphaDelta; 3],
+) -> crate::HoursUtc {
+    let transit_nu = mul_add(360.985647f64, transit_m, nu_degrees);
+    let transit_n = [transit_m + delta_t / 86400.0, 0.0, 0.0];
+    let transit_alpha_delta = calculate_interpolated_alpha_deltas(alpha_deltas, &transit_n)[0];
+    let transit_h_prime = limit_h_prime(transit_nu + longitude - transit_alpha_delta.alpha);
+    crate::HoursUtc::from_hours((transit_m - transit_h_prime / 360.0) * 24.0)
 }
 
 /// A.2.8-15. Calculate final accurate time fractions using corrections
@@ -904,12 +859,7 @@ fn calculate_alpha_delta(jme: f64, delta_psi: f64, epsilon_degrees: f64) -> Alph
 
 /// Normalize value to [0, 1) range using the same logic as the removed `limit_to` function
 fn normalize_to_unit_range(val: f64) -> f64 {
-    let limited = val % 1.0;
-    if limited < 0.0 {
-        limited + 1.0
-    } else {
-        limited
-    }
+    rem_euclid(val, 1.0)
 }
 
 #[cfg(feature = "chrono")]
@@ -1007,14 +957,7 @@ fn limit_if_necessary(val: f64) -> f64 {
 
 /// Limit H' values according to A.2.11
 fn limit_h_prime(h_prime: f64) -> f64 {
-    let limited = {
-        let v = h_prime % 360.0;
-        if v < 0.0 {
-            v + 360.0
-        } else {
-            v
-        }
-    };
+    let limited = rem_euclid(h_prime, 360.0);
     if limited > 180.0 {
         limited - 360.0
     } else {
@@ -1054,7 +997,7 @@ fn limit_h_prime(h_prime: f64) -> f64 {
 /// use solar_positioning::{spa, Horizon};
 /// use chrono::{DateTime, FixedOffset};
 ///
-/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// # fn main() -> solar_positioning::Result<()> {
 /// let datetime = "2023-06-21T12:00:00-07:00".parse::<DateTime<FixedOffset>>().unwrap();
 /// let horizons = [
 ///     Horizon::SunriseSunset,
@@ -1095,7 +1038,7 @@ where
     // SPA sunrise/sunset (Appendix A.2) is defined relative to 0 UT (midnight UTC) of a UTC date.
     // This is an initial guess for the UTC calculation date and may shift by ±1 day so transit
     // lands on the requested local calendar date.
-    let base_utc_date_guess = date.date_naive();
+    let base_utc_date_guess = local_date;
 
     // Pre-calculate common values once for efficiency.
     let precomputed = (|| -> Result<_> {
@@ -1107,18 +1050,16 @@ where
 
                 let (nu_degrees, alpha_deltas) =
                     precompute_sunrise_sunset_for_jd_midnight(jd_midnight);
-                let transit_hours = match calculate_sunrise_sunset_hours_with_precomputed(
-                    latitude,
+                let transit_m = normalize_to_unit_range(
+                    (alpha_deltas[1].alpha - longitude - nu_degrees) / 360.0,
+                );
+                let transit_hours = calculate_transit_hours(
+                    transit_m,
                     longitude,
                     delta_t,
-                    Horizon::SunriseSunset.elevation_angle(),
                     nu_degrees,
-                    alpha_deltas,
-                ) {
-                    crate::SunriseResult::RegularDay { transit, .. }
-                    | crate::SunriseResult::AllDay { transit }
-                    | crate::SunriseResult::AllNight { transit } => transit,
-                };
+                    &alpha_deltas,
+                );
 
                 let transit_local_date = hours_utc_to_datetime(&tz, d, transit_hours).date_naive();
                 Ok((transit_local_date, (nu_degrees, alpha_deltas)))
@@ -1138,7 +1079,7 @@ where
             alpha_deltas,
         );
 
-        let result = match hours_result {
+        let result = ensure_events_bracket_transit(match hours_result {
             crate::SunriseResult::RegularDay {
                 sunrise,
                 transit,
@@ -1154,9 +1095,7 @@ where
             crate::SunriseResult::AllNight { transit } => crate::SunriseResult::AllNight {
                 transit: hours_utc_to_datetime(&tz, base_utc_date, transit),
             },
-        };
-
-        let result = ensure_events_bracket_transit(result);
+        });
 
         Ok((horizon, result))
     })
@@ -1192,7 +1131,7 @@ where
 ///         )?;
 ///     }
 /// }
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), solar_positioning::Error>(())
 /// ```
 ///
 /// # Errors
@@ -1306,11 +1245,10 @@ pub fn spa_time_dependent_from_julian(jd: JulianDate) -> Result<SpaTimeDependent
 ///
 /// # Example
 /// ```rust
-/// use solar_positioning::{spa, RefractionCorrection};
-/// use chrono::{DateTime, Utc};
+/// use solar_positioning::{spa, time::JulianDate, RefractionCorrection};
 ///
-/// let datetime = "2023-06-21T12:00:00Z".parse::<DateTime<Utc>>().unwrap();
-/// let time_parts = spa::spa_time_dependent_parts(datetime, 69.0).unwrap();
+/// let jd = JulianDate::from_utc(2023, 6, 21, 12, 0, 0.0, 69.0).unwrap();
+/// let time_parts = spa::spa_time_dependent_from_julian(jd).unwrap();
 ///
 /// let position = spa::spa_with_time_dependent_parts(
 ///     37.7749,   // San Francisco latitude
@@ -1389,7 +1327,7 @@ pub fn spa_with_time_dependent_parts(
     // Apply atmospheric refraction if requested
     let elevation_angle = 90.0 - zenith_angle;
     let final_zenith = refraction.map_or(zenith_angle, |correction| {
-        if elevation_angle > SUNRISE_SUNSET_ANGLE {
+        if elevation_angle > Horizon::SunriseSunset.elevation_angle() {
             let pressure = correction.pressure();
             let temperature = correction.temperature();
             // Apply refraction correction following the same pattern as calculate_topocentric_zenith_angle

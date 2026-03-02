@@ -14,8 +14,9 @@
 use crate::error::check_coordinates;
 use crate::math::{
     asin, atan2, cos, degrees_to_radians, floor, normalize_degrees_0_to_360, radians_to_degrees,
-    sin, sqrt, tan, PI,
+    rem_euclid, sin, sqrt, tan, PI,
 };
+use crate::time::validate_utc_components;
 use crate::{RefractionCorrection, Result, SolarPosition};
 #[cfg(feature = "chrono")]
 use chrono::{DateTime, Datelike, TimeZone, Timelike};
@@ -127,20 +128,16 @@ pub fn solar_position_from_t(
     let c_epsilon = sqrt(1.0 - s_epsilon * s_epsilon);
 
     // Calculate right ascension (alpha)
-    let mut alpha = atan2(s_lambda * c_epsilon, c_lambda);
-    if alpha < 0.0 {
-        alpha += 2.0 * PI;
-    }
+    let alpha = rem_euclid(atan2(s_lambda * c_epsilon, c_lambda), 2.0 * PI);
 
     // Calculate declination (delta)
     let delta = asin(s_lambda * s_epsilon);
 
     // Calculate hour angle (H)
-    let mut h = 1.7528311 + 6.300388099 * t + degrees_to_radians(longitude) - alpha;
-    h = ((h + PI) % (2.0 * PI)) - PI;
-    if h < -PI {
-        h += 2.0 * PI;
-    }
+    let h = rem_euclid(
+        1.7528311 + 6.300388099 * t + degrees_to_radians(longitude) - alpha + PI,
+        2.0 * PI,
+    ) - PI;
 
     // Calculate topocentric coordinates
     let s_phi = sin(degrees_to_radians(latitude));
@@ -188,31 +185,7 @@ pub fn calc_t_from_components(
     minute: u32,
     second: f64,
 ) -> Result<f64> {
-    if !(1..=12).contains(&month) {
-        return Err(crate::Error::invalid_datetime(
-            "month must be between 1 and 12",
-        ));
-    }
-    if !(1..=31).contains(&day) {
-        return Err(crate::Error::invalid_datetime(
-            "day must be between 1 and 31",
-        ));
-    }
-    if hour > 23 {
-        return Err(crate::Error::invalid_datetime(
-            "hour must be between 0 and 23",
-        ));
-    }
-    if minute > 59 {
-        return Err(crate::Error::invalid_datetime(
-            "minute must be between 0 and 59",
-        ));
-    }
-    if !(0.0..60.0).contains(&second) {
-        return Err(crate::Error::invalid_datetime(
-            "second must be between 0 and 59.999...",
-        ));
-    }
+    validate_utc_components(year, month, day, hour, minute, second)?;
 
     let mut m = month;
     let mut y = year;
@@ -339,6 +312,8 @@ mod tests {
     fn test_calc_t_validation() {
         assert!(calc_t_from_components(2024, 13, 1, 0, 0, 0.0).is_err());
         assert!(calc_t_from_components(2024, 1, 32, 0, 0, 0.0).is_err());
+        assert!(calc_t_from_components(2024, 2, 30, 0, 0, 0.0).is_err());
+        assert!(calc_t_from_components(1582, 10, 10, 0, 0, 0.0).is_err());
         assert!(calc_t_from_components(2024, 1, 1, 24, 0, 0.0).is_err());
         assert!(calc_t_from_components(2024, 1, 1, 0, 60, 0.0).is_err());
         assert!(calc_t_from_components(2024, 1, 1, 0, 0, 60.0).is_err());

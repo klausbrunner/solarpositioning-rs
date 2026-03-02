@@ -161,8 +161,7 @@ pub fn check_longitude(longitude: f64) -> Result<()> {
 /// Returns `InvalidLatitude` or `InvalidLongitude` for out-of-range coordinates.
 pub fn check_coordinates(latitude: f64, longitude: f64) -> Result<()> {
     check_latitude(latitude)?;
-    check_longitude(longitude)?;
-    Ok(())
+    check_longitude(longitude)
 }
 
 /// Validates an elevation angle is finite and within the valid range (-90 to +90 degrees).

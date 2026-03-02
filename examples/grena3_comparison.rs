@@ -1,5 +1,7 @@
 //! Compare SPA and Grena3 algorithms for speed vs accuracy trade-offs.
 
+#![cfg(feature = "chrono")]
+
 use chrono::{DateTime, FixedOffset};
 use solar_positioning::{grena3, spa, time::DeltaT, RefractionCorrection};
 use std::time::Instant;

@@ -20,6 +20,44 @@ const J2000_JDN: f64 = 2_451_545.0;
 /// Days per Julian century
 const DAYS_PER_CENTURY: f64 = 36_525.0;
 
+/// Validates UTC date/time components against both field ranges and the calendar.
+pub(crate) fn validate_utc_components(
+    year: i32,
+    month: u32,
+    day: u32,
+    hour: u32,
+    minute: u32,
+    second: f64,
+) -> Result<()> {
+    if !(1..=12).contains(&month) {
+        return Err(Error::invalid_datetime("month must be between 1 and 12"));
+    }
+    if !(1..=31).contains(&day) {
+        return Err(Error::invalid_datetime("day must be between 1 and 31"));
+    }
+    if hour > 23 {
+        return Err(Error::invalid_datetime("hour must be between 0 and 23"));
+    }
+    if minute > 59 {
+        return Err(Error::invalid_datetime("minute must be between 0 and 59"));
+    }
+    if !(0.0..60.0).contains(&second) {
+        return Err(Error::invalid_datetime(
+            "second must be between 0 and 59.999...",
+        ));
+    }
+    if year == 1582 && month == 10 && (5..=14).contains(&day) {
+        return Err(Error::invalid_datetime(
+            "dates 1582-10-05 through 1582-10-14 do not exist in Gregorian calendar",
+        ));
+    }
+    if day > days_in_month(year, month) {
+        return Err(Error::invalid_datetime("day is out of range for month"));
+    }
+
+    Ok(())
+}
+
 /// Julian date representation for astronomical calculations.
 ///
 /// Follows the SPA algorithm described in Reda & Andreas (2003).
@@ -98,30 +136,9 @@ impl JulianDate {
         second: f64,
         delta_t: f64,
     ) -> Result<Self> {
-        // Validate input ranges
-        if !(1..=12).contains(&month) {
-            return Err(Error::invalid_datetime("month must be between 1 and 12"));
-        }
-        if !(1..=31).contains(&day) {
-            return Err(Error::invalid_datetime("day must be between 1 and 31"));
-        }
-        if hour > 23 {
-            return Err(Error::invalid_datetime("hour must be between 0 and 23"));
-        }
-        if minute > 59 {
-            return Err(Error::invalid_datetime("minute must be between 0 and 59"));
-        }
-        if !(0.0..60.0).contains(&second) {
-            return Err(Error::invalid_datetime(
-                "second must be between 0 and 59.999...",
-            ));
-        }
+        validate_utc_components(year, month, day, hour, minute, second)?;
         if !delta_t.is_finite() {
             return Err(Error::invalid_datetime("delta_t must be finite"));
-        }
-
-        if day > days_in_month(year, month, day)? {
-            return Err(Error::invalid_datetime("day is out of range for month"));
         }
 
         let jd = calculate_julian_date(year, month, day, hour, minute, second);
@@ -264,39 +281,20 @@ fn calculate_julian_date(
     jd
 }
 
-const fn is_gregorian_date(year: i32, month: u32, day: u32) -> bool {
-    year > 1582 || (year == 1582 && (month > 10 || (month == 10 && day >= 15)))
-}
-
-const fn is_leap_year(year: i32, is_gregorian: bool) -> bool {
-    if is_gregorian {
+fn days_in_month(year: i32, month: u32) -> u32 {
+    let is_leap_year = if year > 1582 || (year == 1582 && month > 10) {
         (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
     } else {
         year % 4 == 0
-    }
-}
+    };
 
-fn days_in_month(year: i32, month: u32, day: u32) -> Result<u32> {
-    if year == 1582 && month == 10 && (5..=14).contains(&day) {
-        return Err(Error::invalid_datetime(
-            "dates 1582-10-05 through 1582-10-14 do not exist in Gregorian calendar",
-        ));
-    }
-
-    let is_gregorian = is_gregorian_date(year, month, day);
-    let days = match month {
+    match month {
         1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
         4 | 6 | 9 | 11 => 30,
-        2 => {
-            if is_leap_year(year, is_gregorian) {
-                29
-            } else {
-                28
-            }
-        }
+        2 if is_leap_year => 29,
+        2 => 28,
         _ => unreachable!("month already validated"),
-    };
-    Ok(days)
+    }
 }
 
 /// ΔT (Delta T) estimation functions.

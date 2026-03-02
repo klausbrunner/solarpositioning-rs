@@ -1,5 +1,7 @@
 //! Validate SPA implementation against NREL reference data.
 
+#![cfg(feature = "chrono")]
+
 use chrono::{DateTime, FixedOffset, TimeZone, Utc};
 use solar_positioning::{spa, RefractionCorrection};
 

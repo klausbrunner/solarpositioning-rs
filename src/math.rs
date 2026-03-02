@@ -17,14 +17,14 @@ pub fn radians_to_degrees(radians: f64) -> f64 {
     radians.to_degrees()
 }
 
+/// Computes the Euclidean remainder for floating point values.
+pub fn rem_euclid(x: f64, modulus: f64) -> f64 {
+    mul_add(modulus, -floor(x / modulus), x)
+}
+
 /// Normalizes an angle in degrees to the range [0, 360).
 pub fn normalize_degrees_0_to_360(degrees: f64) -> f64 {
-    let normalized = degrees % 360.0;
-    if normalized < 0.0 {
-        normalized + 360.0
-    } else {
-        normalized
-    }
+    rem_euclid(degrees, 360.0)
 }
 
 /// Computes a polynomial using Horner's method for numerical stability.

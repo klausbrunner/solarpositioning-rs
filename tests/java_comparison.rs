@@ -1,5 +1,7 @@
 //! Test to compare results with the Java implementation.
 
+#![cfg(feature = "chrono")]
+
 use chrono::{DateTime, FixedOffset, TimeZone, Utc};
 use solar_positioning::{spa, RefractionCorrection};
 

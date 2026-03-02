@@ -4,7 +4,7 @@
 
 use solar_positioning::{spa, Horizon, HoursUtc, SunriseResult};
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> solar_positioning::Result<()> {
     println!("=== API Verification ===\n");
 
     // 1. Non-chrono API with explicit elevation angle

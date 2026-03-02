@@ -1,5 +1,7 @@
 //! Sunrise/sunset calculation example with different twilight types across diverse global locations.
 
+#![cfg(feature = "chrono")]
+
 use chrono::{DateTime, TimeZone, Utc};
 use solar_positioning::{spa, time::DeltaT, types::SunriseResult, Horizon};
 

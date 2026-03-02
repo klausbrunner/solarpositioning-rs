@@ -1,6 +1,6 @@
 //! Test the standard sunce performance case: 50:55:0.1 10:15:0.1 2024 position --step=3h
 
-#![cfg(feature = "unstable")]
+#![cfg(all(feature = "unstable", feature = "chrono"))]
 
 use chrono::{DateTime, Duration, Utc};
 use solar_positioning::spa;

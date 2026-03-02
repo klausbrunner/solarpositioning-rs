@@ -1,5 +1,7 @@
 //! Test sunrise/sunset calculations against USNO reference data.
 
+#![cfg(all(feature = "chrono", feature = "std"))]
+
 use chrono::{DateTime, FixedOffset, TimeZone, Timelike, Utc};
 use csv::ReaderBuilder;
 use solar_positioning::{spa, types::SunriseResult};

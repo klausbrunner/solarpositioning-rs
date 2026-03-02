@@ -4,7 +4,7 @@
 
 use solar_positioning::{spa, Horizon};
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> solar_positioning::Result<()> {
     // Calculate sunrise/sunset for San Francisco on June 21, 2023
     // Using the numeric API - no chrono dependency required
     let result = spa::sunrise_sunset_utc_for_horizon(

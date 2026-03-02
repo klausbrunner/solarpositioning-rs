@@ -1,3 +1,5 @@
+#![cfg(feature = "chrono")]
+
 use chrono::{DateTime, FixedOffset, NaiveDate};
 use solar_positioning::{spa, time::DeltaT, Horizon, SunriseResult};
 

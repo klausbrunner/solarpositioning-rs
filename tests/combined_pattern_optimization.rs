@@ -1,6 +1,6 @@
 //! Test combined coordinate+time optimization patterns.
 
-#![cfg(feature = "unstable")]
+#![cfg(all(feature = "unstable", feature = "chrono"))]
 
 use chrono::{DateTime, Duration, Utc};
 use solar_positioning::spa;

@@ -58,14 +58,17 @@ debug = true
 [[example]]
 name = "basic_usage"
 path = "examples/basic_usage.rs"
+required-features = ["std", "chrono"]
 
 [[example]]
 name = "sunrise_sunset"
 path = "examples/sunrise_sunset.rs"
+required-features = ["std", "chrono"]
 
 [[example]]
 name = "grena3_comparison"
 path = "examples/grena3_comparison.rs"
+required-features = ["std", "chrono"]
 
 [[bench]]
 name = "performance_scenarios"

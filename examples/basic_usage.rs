@@ -1,5 +1,7 @@
 //! Basic solar position calculation example.
 
+#![cfg(feature = "chrono")]
+
 use chrono::{DateTime, FixedOffset, TimeZone, Utc};
 use solar_positioning::{spa, time::DeltaT, RefractionCorrection};
 

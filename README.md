@@ -9,7 +9,7 @@ A Rust library for finding topocentric solar coordinates, i.e. the sun's positio
 
 ## Status
 
-While the core algorithms are stable and well-tested, the API is still evolving. Breaking changes may occur in minor version updates. Please pin to a specific version in production code.
+This Rust version was originally bootstrapped from the mature [Java](https://github.com/klausbrunner/solarpositioning) project. The algorithmic core is fairly well tested; APIs may still evolve. Breaking changes may occur in minor version updates. You'll probably want to pin to a specific version in production code.
 
 ## Usage
 
@@ -103,7 +103,11 @@ For twilight, use `Horizon::CivilTwilight`, `Horizon::NauticalTwilight`, or `Hor
 cargo run --example basic_usage          # Solar position
 cargo run --example sunrise_sunset       # Sunrise/sunset/twilight
 cargo run --example grena3_comparison    # SPA vs Grena3
+cargo run --example sunrise_without_chrono --no-default-features --features std
+cargo run --example no_std_usage --no-default-features --features libm
 ```
+
+The first three examples use the default `std + chrono` feature set. The last two use the numeric API.
 
 ### Which algorithm?
 
@@ -129,7 +133,7 @@ high-precision ephemerides (JPL Horizons, USNO almanacs, etc.).
 
 ### Delta T
 
-Delta T (ΔT) is the difference between terrestrial time and UT1 ([Wikipedia](https://en.wikipedia.org/wiki/ΔT_(timekeeping))). For many applications it's negligible (~70 seconds in 2025). For maximum accuracy, use observed values (available from US Naval Observatory) or estimates.
+Delta T (ΔT) is the difference between terrestrial time and UT1 ([Wikipedia](<https://en.wikipedia.org/wiki/ΔT_(timekeeping)>)). For many applications it's negligible (~70 seconds in 2025). For maximum accuracy, use observed values (available from US Naval Observatory) or estimates.
 
 The `time::DeltaT` estimator uses polynomial fits from [Espenak and Meeus](http://eclipse.gsfc.nasa.gov/SEcat5/deltatpoly.html) (2007, updated 2014). Current extrapolated values are slightly high (~2 seconds). This gap will widen ([Morrison et al. 2021](https://royalsocietypublishing.org/doi/10.1098/rspa.2020.0776)). However, this should not matter for most applications.
 

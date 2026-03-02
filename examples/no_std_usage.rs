@@ -1,7 +1,7 @@
-//! Example demonstrating usage without std/chrono dependencies.
+//! Example demonstrating the numeric API without a chrono dependency.
 //!
-//! This shows how to use the library in no_std environments where
-//! users handle their own time conversions.
+//! The library calls shown here also work in `no_std` builds. This example binary itself
+//! uses `println!` only to display the results.
 
 use solar_positioning::{grena3, spa, time::JulianDate, RefractionCorrection};
 
@@ -9,7 +9,7 @@ fn main() {
     // Example: Calculate solar position for 2024-06-21 12:00:00 UTC
     // Vienna: 48.21°N, 16.37°E
 
-    println!("Solar positioning without std/chrono dependencies\n");
+    println!("Solar positioning with the numeric API (no chrono)\n");
 
     // Create Julian date from UTC components
     let jd = JulianDate::from_utc(

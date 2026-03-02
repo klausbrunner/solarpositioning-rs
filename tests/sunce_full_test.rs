@@ -1,6 +1,6 @@
 //! Full test of sunce standard case - actual measurements, both approaches
 
-#![cfg(feature = "unstable")]
+#![cfg(all(feature = "unstable", feature = "chrono"))]
 
 use chrono::{DateTime, Duration, Utc};
 use solar_positioning::spa;

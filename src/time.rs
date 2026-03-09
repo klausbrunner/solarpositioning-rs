@@ -30,29 +30,39 @@ pub(crate) fn validate_utc_components(
     second: f64,
 ) -> Result<()> {
     if !(1..=12).contains(&month) {
-        return Err(Error::invalid_datetime("month must be between 1 and 12"));
+        return Err(Error::InvalidDateTime {
+            message: "month must be between 1 and 12",
+        });
     }
     if !(1..=31).contains(&day) {
-        return Err(Error::invalid_datetime("day must be between 1 and 31"));
+        return Err(Error::InvalidDateTime {
+            message: "day must be between 1 and 31",
+        });
     }
     if hour > 23 {
-        return Err(Error::invalid_datetime("hour must be between 0 and 23"));
+        return Err(Error::InvalidDateTime {
+            message: "hour must be between 0 and 23",
+        });
     }
     if minute > 59 {
-        return Err(Error::invalid_datetime("minute must be between 0 and 59"));
+        return Err(Error::InvalidDateTime {
+            message: "minute must be between 0 and 59",
+        });
     }
     if !(0.0..60.0).contains(&second) {
-        return Err(Error::invalid_datetime(
-            "second must be between 0 and 59.999...",
-        ));
+        return Err(Error::InvalidDateTime {
+            message: "second must be between 0 and 59.999...",
+        });
     }
     if year == 1582 && month == 10 && (5..=14).contains(&day) {
-        return Err(Error::invalid_datetime(
-            "dates 1582-10-05 through 1582-10-14 do not exist in Gregorian calendar",
-        ));
+        return Err(Error::InvalidDateTime {
+            message: "dates 1582-10-05 through 1582-10-14 do not exist in Gregorian calendar",
+        });
     }
     if day > days_in_month(year, month) {
-        return Err(Error::invalid_datetime("day is out of range for month"));
+        return Err(Error::InvalidDateTime {
+            message: "day is out of range for month",
+        });
     }
 
     Ok(())
@@ -138,7 +148,9 @@ impl JulianDate {
     ) -> Result<Self> {
         validate_utc_components(year, month, day, hour, minute, second)?;
         if !delta_t.is_finite() {
-            return Err(Error::invalid_datetime("delta_t must be finite"));
+            return Err(Error::InvalidDateTime {
+                message: "delta_t must be finite",
+            });
         }
 
         let jd = calculate_julian_date(year, month, day, hour, minute, second);
@@ -329,13 +341,15 @@ impl DeltaT {
         let year = decimal_year;
 
         if !year.is_finite() {
-            return Err(Error::invalid_datetime("year must be finite"));
+            return Err(Error::InvalidDateTime {
+                message: "year must be finite",
+            });
         }
 
         if year < -500.0 {
-            return Err(Error::invalid_datetime(
-                "ΔT estimates not available before year -500",
-            ));
+            return Err(Error::InvalidDateTime {
+                message: "ΔT estimates not available before year -500",
+            });
         }
 
         let delta_t = if year < 500.0 {
@@ -435,9 +449,9 @@ impl DeltaT {
             let t = year - 2015.0;
             polynomial(&[67.62, 0.3645, 0.0039755], t)
         } else {
-            return Err(Error::invalid_datetime(
-                "ΔT estimates not available beyond year 3000",
-            ));
+            return Err(Error::InvalidDateTime {
+                message: "ΔT estimates not available beyond year 3000",
+            });
         };
 
         Ok(delta_t)
@@ -461,7 +475,9 @@ impl DeltaT {
     /// This function does not panic.
     pub fn estimate_from_date(year: i32, month: u32) -> Result<f64> {
         if !(1..=12).contains(&month) {
-            return Err(Error::invalid_datetime("month must be between 1 and 12"));
+            return Err(Error::InvalidDateTime {
+                message: "month must be between 1 and 12",
+            });
         }
 
         let decimal_year = f64::from(year) + (f64::from(month) - 0.5) / 12.0;

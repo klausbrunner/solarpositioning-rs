@@ -1,13 +1,13 @@
 //! Basic solar position calculation example.
 
-#![cfg(feature = "chrono")]
-
 use chrono::{DateTime, FixedOffset, TimeZone, Utc};
 use solar_positioning::{spa, time::DeltaT, RefractionCorrection};
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> solar_positioning::Result<()> {
     // Example 1: Calculate solar position using FixedOffset timezone
-    let datetime_fixed = "2023-06-21T12:00:00-07:00".parse::<DateTime<FixedOffset>>()?;
+    let datetime_fixed = "2023-06-21T12:00:00-07:00"
+        .parse::<DateTime<FixedOffset>>()
+        .unwrap();
 
     // Example 2: Same time using UTC
     let datetime_utc = Utc.with_ymd_and_hms(2023, 6, 21, 19, 0, 0).unwrap(); // 19:00 UTC = 12:00 PDT

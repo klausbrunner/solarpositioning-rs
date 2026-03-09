@@ -1,7 +1,5 @@
 //! Sunrise/sunset calculation example with different twilight types across diverse global locations.
 
-#![cfg(feature = "chrono")]
-
 use chrono::{DateTime, TimeZone, Utc};
 use solar_positioning::{spa, time::DeltaT, types::SunriseResult, Horizon};
 
@@ -12,7 +10,7 @@ struct City {
     longitude: f64,
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> solar_positioning::Result<()> {
     // Test cities from around the world (diverse latitudes and longitudes)
     let cities = [
         City {
@@ -67,7 +65,7 @@ fn calculate_and_print_times<Tz: TimeZone>(
     latitude: f64,
     longitude: f64,
     delta_t: f64,
-) -> Result<(), Box<dyn std::error::Error>>
+) -> solar_positioning::Result<()>
 where
     <Tz as TimeZone>::Offset: std::fmt::Display,
 {

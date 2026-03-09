@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Changed
+
+- **BREAKING**: `Horizon` no longer implements `Eq` or `Hash`.
+- **BREAKING**: Removed inherent `Error` constructor helpers like `Error::invalid_datetime(...)`; construct enum variants directly instead.
+
+### Fixed
+
+- Restore `libm`-only builds for the documented numeric/no-chrono example path.
+
 ## [0.5.0] - 2026-02-22
 
 ### Changed

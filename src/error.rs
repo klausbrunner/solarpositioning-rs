@@ -89,57 +89,13 @@ impl fmt::Display for Error {
 #[cfg(feature = "std")]
 impl std::error::Error for Error {}
 
-impl Error {
-    /// Creates an invalid latitude error.
-    #[must_use]
-    pub const fn invalid_latitude(value: f64) -> Self {
-        Self::InvalidLatitude { value }
-    }
-
-    /// Creates an invalid longitude error.
-    #[must_use]
-    pub const fn invalid_longitude(value: f64) -> Self {
-        Self::InvalidLongitude { value }
-    }
-
-    /// Creates an invalid elevation angle error.
-    #[must_use]
-    pub const fn invalid_elevation_angle(value: f64) -> Self {
-        Self::InvalidElevationAngle { value }
-    }
-
-    /// Creates an invalid pressure error.
-    #[must_use]
-    pub const fn invalid_pressure(value: f64) -> Self {
-        Self::InvalidPressure { value }
-    }
-
-    /// Creates an invalid temperature error.
-    #[must_use]
-    pub const fn invalid_temperature(value: f64) -> Self {
-        Self::InvalidTemperature { value }
-    }
-
-    /// Creates an invalid date/time error.
-    #[must_use]
-    pub const fn invalid_datetime(message: &'static str) -> Self {
-        Self::InvalidDateTime { message }
-    }
-
-    /// Creates a computation error.
-    #[must_use]
-    pub const fn computation_error(message: &'static str) -> Self {
-        Self::ComputationError { message }
-    }
-}
-
 /// Validates latitude is within the valid range (-90 to +90 degrees).
 ///
 /// # Errors
 /// Returns `InvalidLatitude` if latitude is outside -90 to +90 degrees.
 pub fn check_latitude(latitude: f64) -> Result<()> {
     if !(-90.0..=90.0).contains(&latitude) {
-        return Err(Error::invalid_latitude(latitude));
+        return Err(Error::InvalidLatitude { value: latitude });
     }
     Ok(())
 }
@@ -150,7 +106,7 @@ pub fn check_latitude(latitude: f64) -> Result<()> {
 /// Returns `InvalidLongitude` if longitude is outside -180 to +180 degrees.
 pub fn check_longitude(longitude: f64) -> Result<()> {
     if !(-180.0..=180.0).contains(&longitude) {
-        return Err(Error::invalid_longitude(longitude));
+        return Err(Error::InvalidLongitude { value: longitude });
     }
     Ok(())
 }
@@ -170,7 +126,9 @@ pub fn check_coordinates(latitude: f64, longitude: f64) -> Result<()> {
 /// Returns `InvalidElevationAngle` if elevation is not finite or outside -90 to +90 degrees.
 pub fn check_elevation_angle(elevation_angle: f64) -> Result<()> {
     if !elevation_angle.is_finite() || !(-90.0..=90.0).contains(&elevation_angle) {
-        return Err(Error::invalid_elevation_angle(elevation_angle));
+        return Err(Error::InvalidElevationAngle {
+            value: elevation_angle,
+        });
     }
     Ok(())
 }
@@ -181,7 +139,7 @@ pub fn check_elevation_angle(elevation_angle: f64) -> Result<()> {
 /// Returns `InvalidPressure` if pressure is not between 1 and 2000 hPa.
 pub fn check_pressure(pressure: f64) -> Result<()> {
     if !pressure.is_finite() || pressure <= 0.0 || pressure > 2000.0 {
-        return Err(Error::invalid_pressure(pressure));
+        return Err(Error::InvalidPressure { value: pressure });
     }
     Ok(())
 }
@@ -192,7 +150,7 @@ pub fn check_pressure(pressure: f64) -> Result<()> {
 /// Returns `InvalidTemperature` if temperature is outside -273.15 to 100°C.
 pub fn check_temperature(temperature: f64) -> Result<()> {
     if !(-273.15..=100.0).contains(&temperature) {
-        return Err(Error::invalid_temperature(temperature));
+        return Err(Error::InvalidTemperature { value: temperature });
     }
     Ok(())
 }
@@ -203,7 +161,9 @@ pub fn check_temperature(temperature: f64) -> Result<()> {
 /// Returns `ComputationError` if azimuth is not finite.
 pub fn check_azimuth(azimuth: f64) -> Result<f64> {
     if !azimuth.is_finite() {
-        return Err(Error::computation_error("azimuth is not finite"));
+        return Err(Error::ComputationError {
+            message: "azimuth is not finite",
+        });
     }
     Ok(normalize_degrees_0_to_360(azimuth))
 }
@@ -214,12 +174,14 @@ pub fn check_azimuth(azimuth: f64) -> Result<f64> {
 /// Returns `ComputationError` if zenith angle is not finite or outside valid range.
 pub fn check_zenith_angle(zenith: f64) -> Result<f64> {
     if !zenith.is_finite() {
-        return Err(Error::computation_error("zenith angle is not finite"));
+        return Err(Error::ComputationError {
+            message: "zenith angle is not finite",
+        });
     }
     if !(0.0..=180.0).contains(&zenith) {
-        return Err(Error::computation_error(
-            "zenith angle must be between 0° and 180°",
-        ));
+        return Err(Error::ComputationError {
+            message: "zenith angle must be between 0° and 180°",
+        });
     }
     Ok(zenith)
 }
@@ -293,19 +255,21 @@ mod tests {
     #[test]
     #[cfg(feature = "std")]
     fn test_error_display() {
-        let err = Error::invalid_latitude(95.0);
+        let err = Error::InvalidLatitude { value: 95.0 };
         assert_eq!(
             err.to_string(),
             "invalid latitude 95° (must be between -90° and +90°)"
         );
 
-        let err = Error::invalid_longitude(185.0);
+        let err = Error::InvalidLongitude { value: 185.0 };
         assert_eq!(
             err.to_string(),
             "invalid longitude 185° (must be between -180° and +180°)"
         );
 
-        let err = Error::computation_error("convergence failed");
+        let err = Error::ComputationError {
+            message: "convergence failed",
+        };
         assert_eq!(err.to_string(), "computation error: convergence failed");
     }
 

@@ -1349,8 +1349,6 @@ pub fn spa_with_time_dependent_parts(
 mod tests {
     use super::*;
     use chrono::{DateTime, FixedOffset};
-    use std::collections::HashSet;
-
     #[test]
     fn test_spa_basic_functionality() {
         let datetime = "2023-06-21T12:00:00Z"
@@ -1398,9 +1396,8 @@ mod tests {
         assert_eq!(results.len(), 3);
 
         // Check that we have all expected horizons
-        let returned_horizons: HashSet<_> = results.iter().map(|(h, _)| *h).collect();
         for expected_horizon in horizons {
-            assert!(returned_horizons.contains(&expected_horizon));
+            assert!(results.iter().any(|(h, _)| *h == expected_horizon));
         }
 
         // Compare with individual calls to ensure consistency

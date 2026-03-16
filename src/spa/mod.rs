@@ -161,6 +161,14 @@ pub struct SpaTimeDependent {
     pub(crate) delta_degrees: f64,
 }
 
+impl SpaTimeDependent {
+    /// Gets the Earth radius vector in AU
+    #[must_use]
+    pub const fn earth_radius_vector(&self) -> f64 {
+        self.r
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 struct DeltaPsiEpsilon {
     delta_psi: f64,

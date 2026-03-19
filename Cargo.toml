@@ -1,6 +1,6 @@
 [package]
 name = "solar-positioning"
-version = "0.5.0"
+version = "0.5.1-dev"
 edition = "2021"
 rust-version = "1.70"
 license = "MIT"
@@ -14,6 +14,7 @@ keywords = ["solar", "sun", "astronomy", "spa", "sunrise"]
 authors = ["Klaus Brunner <klaus.brunner@gmail.com>"]
 exclude = [
     ".github/",
+    "scripts/",
     "tests/data/",
     "benches/data/",
 ]

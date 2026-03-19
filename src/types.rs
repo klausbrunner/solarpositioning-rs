@@ -1,8 +1,6 @@
 //! Core data types for solar positioning calculations.
 
-use crate::error::{
-    check_azimuth, check_elevation_angle, check_pressure, check_temperature, check_zenith_angle,
-};
+use crate::error::{check_azimuth, check_pressure, check_temperature, check_zenith_angle};
 use crate::math::{floor, rem_euclid};
 use crate::Result;
 
@@ -36,15 +34,6 @@ impl Horizon {
             Self::AstronomicalTwilight => -18.0,
             Self::Custom(angle) => *angle,
         }
-    }
-
-    /// Creates a custom horizon with the specified elevation angle.
-    ///
-    /// # Errors
-    /// Returns `InvalidElevationAngle` if elevation is not finite or outside -90 to +90 degrees.
-    pub fn custom(elevation_degrees: f64) -> Result<Self> {
-        check_elevation_angle(elevation_degrees)?;
-        Ok(Self::Custom(elevation_degrees))
     }
 }
 
@@ -256,15 +245,7 @@ impl HoursUtc {
     #[must_use]
     pub fn day_and_hours(&self) -> (i32, f64) {
         let hours = self.0;
-        if !hours.is_finite() {
-            return (0, hours);
-        }
-
-        let day_offset_raw = floor(hours / 24.0);
-        let normalized_hours = rem_euclid(hours, 24.0);
-        let day_offset = day_offset_raw.clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as i32;
-
-        (day_offset, normalized_hours)
+        (floor(hours / 24.0) as i32, rem_euclid(hours, 24.0))
     }
 }
 
@@ -354,11 +335,7 @@ mod tests {
         assert_eq!(Horizon::NauticalTwilight.elevation_angle(), -12.0);
         assert_eq!(Horizon::AstronomicalTwilight.elevation_angle(), -18.0);
 
-        let custom = Horizon::custom(-3.0).unwrap();
-        assert_eq!(custom.elevation_angle(), -3.0);
-
-        assert!(Horizon::custom(-95.0).is_err());
-        assert!(Horizon::custom(95.0).is_err());
+        assert_eq!(Horizon::Custom(-3.0).elevation_angle(), -3.0);
     }
 
     #[test]

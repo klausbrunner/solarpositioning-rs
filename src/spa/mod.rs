@@ -562,7 +562,7 @@ fn calculate_sunrise_sunset_hours_with_precomputed(
     alpha_deltas: [AlphaDelta; 3],
 ) -> crate::SunriseResult<crate::HoursUtc> {
     let m0 = (alpha_deltas[1].alpha - longitude - nu_degrees) / 360.0;
-    let transit_m = normalize_to_unit_range(m0);
+    let transit_m = rem_euclid(m0, 1.0);
     let phi = degrees_to_radians(latitude);
     let delta1_rad = degrees_to_radians(alpha_deltas[1].delta);
     let elevation_rad = degrees_to_radians(elevation_angle);
@@ -586,8 +586,8 @@ fn calculate_sunrise_sunset_hours_with_precomputed(
     let h0_degrees = radians_to_degrees(acos(acos_arg));
     let m_values = [
         transit_m,
-        normalize_to_unit_range(m0 - h0_degrees / 360.0),
-        normalize_to_unit_range(m0 + h0_degrees / 360.0),
+        rem_euclid(m0 - h0_degrees / 360.0, 1.0),
+        rem_euclid(m0 + h0_degrees / 360.0, 1.0),
     ];
 
     let (t_frac, r_frac, s_frac) = calculate_final_time_fractions(
@@ -857,11 +857,6 @@ fn calculate_alpha_delta(jme: f64, delta_psi: f64, epsilon_degrees: f64) -> Alph
     }
 }
 
-/// Normalize value to [0, 1) range using the same logic as the removed `limit_to` function
-fn normalize_to_unit_range(val: f64) -> f64 {
-    rem_euclid(val, 1.0)
-}
-
 #[cfg(feature = "chrono")]
 fn select_utc_date_by_transit<V, F>(
     local_date: NaiveDate,
@@ -949,7 +944,7 @@ fn ensure_events_bracket_transit<Tz: TimeZone>(
 /// Limit to 0..1 if absolute value > 2 (Java limitIfNecessary)
 fn limit_if_necessary(val: f64) -> f64 {
     if val.abs() > 2.0 {
-        normalize_to_unit_range(val)
+        rem_euclid(val, 1.0)
     } else {
         val
     }
@@ -1050,8 +1045,9 @@ where
 
                 let (nu_degrees, alpha_deltas) =
                     precompute_sunrise_sunset_for_jd_midnight(jd_midnight);
-                let transit_m = normalize_to_unit_range(
+                let transit_m = rem_euclid(
                     (alpha_deltas[1].alpha - longitude - nu_degrees) / 360.0,
+                    1.0,
                 );
                 let transit_hours = calculate_transit_hours(
                     transit_m,

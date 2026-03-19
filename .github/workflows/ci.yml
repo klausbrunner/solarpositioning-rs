@@ -66,12 +66,16 @@ jobs:
         include:
           - features: "--no-default-features --features std"
             test: false
+            doc_test: true
           - features: "--no-default-features --features libm"
             test: false
+            doc_test: true
           - features: "--no-default-features --features 'std,chrono'"
             test: true
+            doc_test: false
           - features: "--no-default-features --features 'libm,chrono'"
             test: true
+            doc_test: false
     steps:
       - uses: actions/checkout@v6
       - uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -79,3 +83,5 @@ jobs:
       - run: cargo check ${{ matrix.features }}
       - if: matrix.test
         run: cargo test --lib ${{ matrix.features }}
+      - if: matrix.doc_test
+        run: cargo test --doc ${{ matrix.features }}

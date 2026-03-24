@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## [0.5.1] - 2026-03-24
+
+### Added
+
+- Add `SpaTimeDependent` getters for geocentric right ascension, declination, and Earth radius vector.
+
 ### Changed
 
 - **BREAKING**: `Horizon` no longer implements `Eq` or `Hash`.

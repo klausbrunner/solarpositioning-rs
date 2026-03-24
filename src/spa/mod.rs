@@ -162,10 +162,22 @@ pub struct SpaTimeDependent {
 }
 
 impl SpaTimeDependent {
-    /// Gets the Earth radius vector in AU
+    /// Gets the Earth radius vector in astronomical units.
     #[must_use]
     pub const fn earth_radius_vector(&self) -> f64 {
         self.r
+    }
+
+    /// Gets the geocentric sun right ascension in degrees.
+    #[must_use]
+    pub const fn right_ascension(&self) -> f64 {
+        self.alpha_degrees
+    }
+
+    /// Gets the geocentric sun declination in degrees.
+    #[must_use]
+    pub const fn declination(&self) -> f64 {
+        self.delta_degrees
     }
 }
 
@@ -1357,6 +1369,12 @@ pub fn spa_with_time_dependent_parts(
 mod tests {
     use super::*;
     use chrono::{DateTime, FixedOffset};
+
+    fn angular_distance(a: f64, b: f64) -> f64 {
+        let diff = (a - b).abs();
+        diff.min(360.0 - diff)
+    }
+
     #[test]
     fn test_spa_basic_functionality() {
         let datetime = "2023-06-21T12:00:00Z"
@@ -1376,6 +1394,50 @@ mod tests {
         let position = result.unwrap();
         assert!(position.azimuth() >= 0.0 && position.azimuth() <= 360.0);
         assert!(position.zenith_angle() >= 0.0 && position.zenith_angle() <= 180.0);
+    }
+
+    #[test]
+    fn test_time_dependent_tracks_seasonal_geometry() {
+        let june_solstice = spa_time_dependent_from_julian(
+            JulianDate::from_utc(2023, 6, 21, 12, 0, 0.0, 69.0).unwrap(),
+        )
+        .unwrap();
+        let december_solstice = spa_time_dependent_from_julian(
+            JulianDate::from_utc(2023, 12, 22, 12, 0, 0.0, 69.0).unwrap(),
+        )
+        .unwrap();
+        let march_equinox = spa_time_dependent_from_julian(
+            JulianDate::from_utc(2023, 3, 20, 12, 0, 0.0, 69.0).unwrap(),
+        )
+        .unwrap();
+
+        assert!(june_solstice.declination() > 23.0);
+        assert!(june_solstice.declination() < 24.0);
+        assert!(angular_distance(june_solstice.right_ascension(), 90.0) < 2.0);
+
+        assert!(december_solstice.declination() < -23.0);
+        assert!(december_solstice.declination() > -24.0);
+        assert!(angular_distance(december_solstice.right_ascension(), 270.0) < 2.0);
+
+        assert!(march_equinox.declination().abs() < 1.0);
+    }
+
+    #[test]
+    fn test_time_dependent_earth_radius_vector_changes_over_year() {
+        let near_perihelion = spa_time_dependent_from_julian(
+            JulianDate::from_utc(2023, 1, 4, 12, 0, 0.0, 69.0).unwrap(),
+        )
+        .unwrap();
+        let near_aphelion = spa_time_dependent_from_julian(
+            JulianDate::from_utc(2023, 7, 4, 12, 0, 0.0, 69.0).unwrap(),
+        )
+        .unwrap();
+
+        assert!(near_perihelion.earth_radius_vector() > 0.98);
+        assert!(near_perihelion.earth_radius_vector() < 0.99);
+        assert!(near_aphelion.earth_radius_vector() > 1.01);
+        assert!(near_aphelion.earth_radius_vector() < 1.02);
+        assert!(near_aphelion.earth_radius_vector() > near_perihelion.earth_radius_vector());
     }
 
     #[test]

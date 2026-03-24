@@ -145,6 +145,34 @@ pub fn solar_position_from_julian(
     spa_with_time_dependent_parts(latitude, longitude, elevation, refraction, &time_dependent)
 }
 
+/// Physically meaningful solar ephemeris values derived by SPA.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SolarEphemeris {
+    right_ascension_degrees: f64,
+    declination_degrees: f64,
+    earth_radius_vector_au: f64,
+}
+
+impl SolarEphemeris {
+    /// Gets the geocentric sun right ascension in degrees.
+    #[must_use]
+    pub const fn right_ascension(&self) -> f64 {
+        self.right_ascension_degrees
+    }
+
+    /// Gets the geocentric sun declination in degrees.
+    #[must_use]
+    pub const fn declination(&self) -> f64 {
+        self.declination_degrees
+    }
+
+    /// Gets the Earth radius vector in astronomical units.
+    #[must_use]
+    pub const fn earth_radius_vector(&self) -> f64 {
+        self.earth_radius_vector_au
+    }
+}
+
 /// Time-dependent intermediate values from SPA calculation (steps 1-11).
 ///
 /// Pre-computed astronomical values independent of observer location.
@@ -239,6 +267,55 @@ fn calculate_delta_psi_epsilon(jce: f64, x: &[f64]) -> DeltaPsiEpsilon {
 fn calculate_true_obliquity_of_ecliptic(jd: &JulianDate, delta_epsilon: f64) -> f64 {
     let epsilon0 = polynomial(OBLIQUITY_COEFFS, jd.julian_ephemeris_millennium() / 10.0);
     epsilon0 / 3600.0 + delta_epsilon
+}
+
+fn calculate_solar_ephemeris_and_sidereal_time(jd: JulianDate) -> (SolarEphemeris, f64) {
+    let jme = jd.julian_ephemeris_millennium();
+    let jce = jd.julian_ephemeris_century();
+
+    let l_terms = calculate_lbr_terms(jme, TERMS_L);
+    let l_degrees = lbr_to_normalized_degrees(jme, &l_terms, TERMS_L.len());
+
+    let b_terms = calculate_lbr_terms(jme, TERMS_B);
+    let b_degrees = lbr_to_normalized_degrees(jme, &b_terms, TERMS_B.len());
+
+    let r_terms = calculate_lbr_terms(jme, TERMS_R);
+    let r = calculate_lbr_polynomial(jme, &r_terms, TERMS_R.len());
+    assert!(
+        r != 0.0,
+        "Earth radius vector is zero - astronomical impossibility"
+    );
+
+    let theta_degrees = normalize_degrees_0_to_360(l_degrees + 180.0);
+    let beta_degrees = -b_degrees;
+
+    let x_terms = calculate_nutation_terms(jce);
+    let delta_psi_epsilon = calculate_delta_psi_epsilon(jce, &x_terms);
+    let epsilon_degrees =
+        calculate_true_obliquity_of_ecliptic(&jd, delta_psi_epsilon.delta_epsilon);
+    let delta_tau = ABERRATION_CONSTANT / (SECONDS_PER_HOUR * r);
+    let lambda_degrees = theta_degrees + delta_psi_epsilon.delta_psi + delta_tau;
+    let nu_degrees = calculate_apparent_sidereal_time_at_greenwich(
+        &jd,
+        delta_psi_epsilon.delta_psi,
+        epsilon_degrees,
+    );
+
+    let beta = degrees_to_radians(beta_degrees);
+    let epsilon = degrees_to_radians(epsilon_degrees);
+    let lambda = degrees_to_radians(lambda_degrees);
+    let alpha_degrees = calculate_geocentric_sun_right_ascension(beta, epsilon, lambda);
+    let delta_degrees =
+        radians_to_degrees(calculate_geocentric_sun_declination(beta, epsilon, lambda));
+
+    (
+        SolarEphemeris {
+            right_ascension_degrees: alpha_degrees,
+            declination_degrees: delta_degrees,
+            earth_radius_vector_au: r,
+        },
+        nu_degrees,
+    )
 }
 
 /// Calculate apparent sidereal time at Greenwich.
@@ -1145,6 +1222,36 @@ pub fn spa_time_dependent_parts<Tz: TimeZone>(
     spa_time_dependent_from_julian(jd)
 }
 
+/// Calculate solar ephemeris values using the SPA algorithm.
+///
+/// # Errors
+/// Returns error if Julian date calculation fails for the provided datetime.
+#[cfg(feature = "chrono")]
+#[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
+#[allow(clippy::needless_pass_by_value)]
+pub fn ephemeris<Tz: TimeZone>(datetime: DateTime<Tz>, delta_t: f64) -> Result<SolarEphemeris> {
+    let jd = JulianDate::from_datetime(&datetime, delta_t)?;
+    ephemeris_from_julian(jd)
+}
+
+/// Calculate solar ephemeris values from a Julian date.
+///
+/// # Example
+/// ```rust
+/// use solar_positioning::{spa, time::JulianDate};
+///
+/// let jd = JulianDate::from_utc(2023, 6, 21, 12, 0, 0.0, 69.0).unwrap();
+/// let ephemeris = spa::ephemeris_from_julian(jd).unwrap();
+///
+/// assert!(ephemeris.earth_radius_vector() > 0.0);
+/// ```
+///
+/// # Errors
+/// Returns error if the Julian date is invalid.
+pub fn ephemeris_from_julian(jd: JulianDate) -> Result<SolarEphemeris> {
+    Ok(calculate_solar_ephemeris_and_sidereal_time(jd).0)
+}
+
 /// Calculate time-dependent parts of SPA from a Julian date.
 ///
 /// Core implementation for `no_std` compatibility.
@@ -1155,68 +1262,13 @@ pub fn spa_time_dependent_parts<Tz: TimeZone>(
 /// # Panics
 /// Panics if Earth radius vector is zero (astronomical impossibility).
 pub fn spa_time_dependent_from_julian(jd: JulianDate) -> Result<SpaTimeDependent> {
-    let jme = jd.julian_ephemeris_millennium();
-    let jce = jd.julian_ephemeris_century();
-
-    // 3.2.2. Calculate the Earth heliocentric longitude, L (in degrees)
-    let l_terms = calculate_lbr_terms(jme, TERMS_L);
-    let l_degrees = lbr_to_normalized_degrees(jme, &l_terms, TERMS_L.len());
-
-    // 3.2.3. Calculate the Earth heliocentric latitude, B (in degrees)
-    let b_terms = calculate_lbr_terms(jme, TERMS_B);
-    let b_degrees = lbr_to_normalized_degrees(jme, &b_terms, TERMS_B.len());
-
-    // 3.2.4. Calculate the Earth radius vector, R (in Astronomical Units, AU)
-    let r_terms = calculate_lbr_terms(jme, TERMS_R);
-    let r = calculate_lbr_polynomial(jme, &r_terms, TERMS_R.len());
-
-    // Earth's radius vector should never be zero (would mean Earth at center of Sun)
-    assert!(
-        r != 0.0,
-        "Earth radius vector is zero - astronomical impossibility"
-    );
-
-    // 3.2.5. Calculate the geocentric longitude, theta (in degrees)
-    let theta_degrees = normalize_degrees_0_to_360(l_degrees + 180.0);
-    // 3.2.6. Calculate the geocentric latitude, beta (in degrees)
-    let beta_degrees = -b_degrees;
-
-    // 3.3. Calculate the nutation in longitude and obliquity
-    let x_terms = calculate_nutation_terms(jce);
-    let delta_psi_epsilon = calculate_delta_psi_epsilon(jce, &x_terms);
-
-    // 3.4. Calculate the true obliquity of the ecliptic, epsilon (in degrees)
-    let epsilon_degrees =
-        calculate_true_obliquity_of_ecliptic(&jd, delta_psi_epsilon.delta_epsilon);
-
-    // 3.5. Calculate the aberration correction, delta_tau (in degrees)
-    let delta_tau = ABERRATION_CONSTANT / (SECONDS_PER_HOUR * r);
-
-    // 3.6. Calculate the apparent sun longitude, lambda (in degrees)
-    let lambda_degrees = theta_degrees + delta_psi_epsilon.delta_psi + delta_tau;
-
-    // 3.7. Calculate the apparent sidereal time at Greenwich at any given time, nu (in degrees)
-    let nu_degrees = calculate_apparent_sidereal_time_at_greenwich(
-        &jd,
-        delta_psi_epsilon.delta_psi,
-        epsilon_degrees,
-    );
-
-    // 3.8.1. Calculate the geocentric sun right ascension, alpha (in degrees)
-    let beta = degrees_to_radians(beta_degrees);
-    let epsilon = degrees_to_radians(epsilon_degrees);
-    let lambda = degrees_to_radians(lambda_degrees);
-    let alpha_degrees = calculate_geocentric_sun_right_ascension(beta, epsilon, lambda);
-
-    // 3.8.2. Calculate the geocentric sun declination, delta (in degrees)
-    let delta_degrees =
-        radians_to_degrees(calculate_geocentric_sun_declination(beta, epsilon, lambda));
+    let (ephemeris, nu_degrees) = calculate_solar_ephemeris_and_sidereal_time(jd);
 
     Ok(SpaTimeDependent {
-        r,
+        r: ephemeris.earth_radius_vector(),
         nu_degrees,
-        alpha_degrees,
-        delta_degrees,
+        alpha_degrees: ephemeris.right_ascension(),
+        delta_degrees: ephemeris.declination(),
     })
 }
 
@@ -1345,6 +1397,12 @@ pub fn spa_with_time_dependent_parts(
 mod tests {
     use super::*;
     use chrono::{DateTime, FixedOffset};
+
+    fn angular_distance(a: f64, b: f64) -> f64 {
+        let diff = (a - b).abs();
+        diff.min(360.0 - diff)
+    }
+
     #[test]
     fn test_spa_basic_functionality() {
         let datetime = "2023-06-21T12:00:00Z"
@@ -1364,6 +1422,70 @@ mod tests {
         let position = result.unwrap();
         assert!(position.azimuth() >= 0.0 && position.azimuth() <= 360.0);
         assert!(position.zenith_angle() >= 0.0 && position.zenith_angle() <= 180.0);
+    }
+
+    #[test]
+    fn test_ephemeris_chrono_matches_numeric_api() {
+        let datetime = "2023-06-21T12:00:00-07:00"
+            .parse::<DateTime<FixedOffset>>()
+            .unwrap();
+        let jd = JulianDate::from_datetime(&datetime, 69.0).unwrap();
+
+        let chrono_ephemeris = ephemeris(datetime, 69.0).unwrap();
+        let numeric_ephemeris = ephemeris_from_julian(jd).unwrap();
+
+        assert_eq!(chrono_ephemeris, numeric_ephemeris);
+    }
+
+    #[test]
+    fn test_ephemeris_tracks_seasonal_geometry() {
+        let june_solstice =
+            ephemeris_from_julian(JulianDate::from_utc(2023, 6, 21, 12, 0, 0.0, 69.0).unwrap())
+                .unwrap();
+        let december_solstice =
+            ephemeris_from_julian(JulianDate::from_utc(2023, 12, 22, 12, 0, 0.0, 69.0).unwrap())
+                .unwrap();
+        let march_equinox =
+            ephemeris_from_julian(JulianDate::from_utc(2023, 3, 20, 12, 0, 0.0, 69.0).unwrap())
+                .unwrap();
+
+        assert!(june_solstice.declination() > 23.0);
+        assert!(june_solstice.declination() < 24.0);
+        assert!(angular_distance(june_solstice.right_ascension(), 90.0) < 2.0);
+
+        assert!(december_solstice.declination() < -23.0);
+        assert!(december_solstice.declination() > -24.0);
+        assert!(angular_distance(december_solstice.right_ascension(), 270.0) < 2.0);
+
+        assert!(march_equinox.declination().abs() < 1.0);
+    }
+
+    #[test]
+    fn test_ephemeris_earth_radius_vector_changes_over_year() {
+        let near_perihelion =
+            ephemeris_from_julian(JulianDate::from_utc(2023, 1, 4, 12, 0, 0.0, 69.0).unwrap())
+                .unwrap();
+        let near_aphelion =
+            ephemeris_from_julian(JulianDate::from_utc(2023, 7, 4, 12, 0, 0.0, 69.0).unwrap())
+                .unwrap();
+
+        assert!(near_perihelion.earth_radius_vector() > 0.98);
+        assert!(near_perihelion.earth_radius_vector() < 0.99);
+        assert!(near_aphelion.earth_radius_vector() > 1.01);
+        assert!(near_aphelion.earth_radius_vector() < 1.02);
+        assert!(near_aphelion.earth_radius_vector() > near_perihelion.earth_radius_vector());
+    }
+
+    #[test]
+    fn test_ephemeris_matches_time_dependent_values() {
+        let jd = JulianDate::from_utc(2023, 6, 21, 12, 0, 0.0, 69.0).unwrap();
+
+        let ephemeris = ephemeris_from_julian(jd).unwrap();
+        let time_dependent = spa_time_dependent_from_julian(jd).unwrap();
+
+        assert_eq!(ephemeris.right_ascension(), time_dependent.alpha_degrees);
+        assert_eq!(ephemeris.declination(), time_dependent.delta_degrees);
+        assert_eq!(ephemeris.earth_radius_vector(), time_dependent.r);
     }
 
     #[test]

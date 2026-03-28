@@ -187,32 +187,26 @@ struct DeltaPsiEpsilon {
     delta_epsilon: f64,
 }
 
-/// Calculate L, B, R terms from the coefficient tables.
-fn calculate_lbr_terms(jme: f64, term_coeffs: &[&[&[f64; 3]]]) -> [f64; 6] {
-    // We know from coefficients that we have exactly 6 terms for L, 2 for B, and 5 for R
-    // Use a fixed-size array to avoid heap allocation
-    let mut lbr_terms = [0.0; 6];
+/// Calculate L, B, or R polynomial from the terms.
+fn calculate_lbr_polynomial(jme: f64, term_coeffs: &[&[&[f64; 3]]]) -> f64 {
+    let mut term_sums = [0.0; 6];
 
-    for (i, term_set) in term_coeffs.iter().enumerate().take(6) {
-        let mut lbr_sum = 0.0;
+    for (i, term_set) in term_coeffs.iter().enumerate() {
+        let mut sum = 0.0;
         for term in *term_set {
-            lbr_sum += term[0] * cos(mul_add(term[2], jme, term[1]));
+            sum += term[0] * cos(mul_add(term[2], jme, term[1]));
         }
-        lbr_terms[i] = lbr_sum;
+        term_sums[i] = sum;
     }
 
-    lbr_terms
-}
-
-/// Calculate L, B, or R polynomial from the terms.
-fn calculate_lbr_polynomial(jme: f64, terms: &[f64], num_terms: usize) -> f64 {
-    polynomial(&terms[..num_terms], jme) / 1e8
+    polynomial(&term_sums[..term_coeffs.len()], jme) / 1e8
 }
 
 /// Calculate normalized degrees from LBR polynomial
-fn lbr_to_normalized_degrees(jme: f64, terms: &[f64], num_terms: usize) -> f64 {
+fn lbr_to_normalized_degrees(jme: f64, term_coeffs: &[&[&[f64; 3]]]) -> f64 {
     normalize_degrees_0_to_360(radians_to_degrees(calculate_lbr_polynomial(
-        jme, terms, num_terms,
+        jme,
+        term_coeffs,
     )))
 }
 
@@ -230,7 +224,7 @@ fn calculate_nutation_terms(jce: f64) -> [f64; 5] {
 }
 
 /// Calculate nutation in longitude and obliquity.
-fn calculate_delta_psi_epsilon(jce: f64, x: &[f64]) -> DeltaPsiEpsilon {
+fn calculate_delta_psi_epsilon(jce: f64, x: &[f64; 5]) -> DeltaPsiEpsilon {
     let mut delta_psi = 0.0;
     let mut delta_epsilon = 0.0;
 
@@ -836,20 +830,17 @@ fn calculate_alpha_delta(jme: f64, delta_psi: f64, epsilon_degrees: f64) -> Alph
     // Follow Java calculateAlphaDelta exactly
 
     // 3.2.3. Calculate Earth heliocentric latitude, B
-    let b_terms = calculate_lbr_terms(jme, TERMS_B);
-    let b_degrees = lbr_to_normalized_degrees(jme, &b_terms, TERMS_B.len());
+    let b_degrees = lbr_to_normalized_degrees(jme, TERMS_B);
 
     // 3.2.4. Calculate Earth radius vector, R
-    let r_terms = calculate_lbr_terms(jme, TERMS_R);
-    let r = calculate_lbr_polynomial(jme, &r_terms, TERMS_R.len());
+    let r = calculate_lbr_polynomial(jme, TERMS_R);
     assert!(
         r != 0.0,
         "Earth radius vector is zero - astronomical impossibility"
     );
 
     // 3.2.2. Calculate Earth heliocentric longitude, L
-    let l_terms = calculate_lbr_terms(jme, TERMS_L);
-    let l_degrees = lbr_to_normalized_degrees(jme, &l_terms, TERMS_L.len());
+    let l_degrees = lbr_to_normalized_degrees(jme, TERMS_L);
 
     // 3.2.5. Calculate geocentric longitude, theta
     let theta_degrees = normalize_degrees_0_to_360(l_degrees + 180.0);
@@ -1179,16 +1170,13 @@ pub fn spa_time_dependent_from_julian(jd: JulianDate) -> Result<SpaTimeDependent
     let jce = jd.julian_ephemeris_century();
 
     // 3.2.2. Calculate the Earth heliocentric longitude, L (in degrees)
-    let l_terms = calculate_lbr_terms(jme, TERMS_L);
-    let l_degrees = lbr_to_normalized_degrees(jme, &l_terms, TERMS_L.len());
+    let l_degrees = lbr_to_normalized_degrees(jme, TERMS_L);
 
     // 3.2.3. Calculate the Earth heliocentric latitude, B (in degrees)
-    let b_terms = calculate_lbr_terms(jme, TERMS_B);
-    let b_degrees = lbr_to_normalized_degrees(jme, &b_terms, TERMS_B.len());
+    let b_degrees = lbr_to_normalized_degrees(jme, TERMS_B);
 
     // 3.2.4. Calculate the Earth radius vector, R (in Astronomical Units, AU)
-    let r_terms = calculate_lbr_terms(jme, TERMS_R);
-    let r = calculate_lbr_polynomial(jme, &r_terms, TERMS_R.len());
+    let r = calculate_lbr_polynomial(jme, TERMS_R);
 
     // Earth's radius vector should never be zero (would mean Earth at center of Sun)
     assert!(

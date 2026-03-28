@@ -201,6 +201,73 @@ fn benchmark_coordinate_sweep_fixed_time(c: &mut Criterion) {
     group.finish();
 }
 
+fn benchmark_sunrise_sunset_multiple(c: &mut Criterion) {
+    let mut group = c.benchmark_group("sunrise_sunset_multiple");
+    group.sample_size(20);
+    group.warm_up_time(std::time::Duration::from_secs(1));
+    group.measurement_time(std::time::Duration::from_secs(4));
+
+    let datetime = "2023-06-21T12:00:00Z".parse::<DateTime<Utc>>().unwrap();
+    let lat = 37.7749;
+    let lon = -122.4194;
+
+    let horizon_sets: &[(&str, &[solar_positioning::Horizon])] = &[
+        ("1", &[solar_positioning::Horizon::SunriseSunset]),
+        (
+            "3",
+            &[
+                solar_positioning::Horizon::SunriseSunset,
+                solar_positioning::Horizon::CivilTwilight,
+                solar_positioning::Horizon::NauticalTwilight,
+            ],
+        ),
+        (
+            "5",
+            &[
+                solar_positioning::Horizon::SunriseSunset,
+                solar_positioning::Horizon::CivilTwilight,
+                solar_positioning::Horizon::NauticalTwilight,
+                solar_positioning::Horizon::AstronomicalTwilight,
+                solar_positioning::Horizon::Custom(-4.0),
+            ],
+        ),
+    ];
+
+    for &(name, horizons) in horizon_sets {
+        group.throughput(Throughput::Elements(horizons.len() as u64));
+        group.bench_with_input(BenchmarkId::new("spa", name), horizons, |b, horizons| {
+            b.iter(|| {
+                spa::sunrise_sunset_multiple(
+                    black_box(datetime),
+                    black_box(lat),
+                    black_box(lon),
+                    black_box(69.0),
+                    horizons.iter().copied(),
+                )
+                .collect::<solar_positioning::Result<Vec<_>>>()
+                .unwrap()
+            })
+        });
+    }
+
+    group.finish();
+}
+
+fn benchmark_spa_time_dependent(c: &mut Criterion) {
+    let mut group = c.benchmark_group("spa_time_dependent");
+    group.sample_size(20);
+    group.warm_up_time(std::time::Duration::from_secs(1));
+    group.measurement_time(std::time::Duration::from_secs(4));
+
+    let jd = solar_positioning::time::JulianDate::from_utc(2023, 6, 21, 12, 0, 0.0, 69.0).unwrap();
+
+    group.bench_function("from_julian", |b| {
+        b.iter(|| spa::spa_time_dependent_from_julian(black_box(jd)).unwrap())
+    });
+
+    group.finish();
+}
+
 fn benchmark_mixed_coordinates_and_times(c: &mut Criterion) {
     let mut group = c.benchmark_group("mixed_coordinates_and_times");
     group.sample_size(10);
@@ -255,6 +322,8 @@ criterion_group!(
     benchmark_single_calculation,
     benchmark_time_series_fixed_location,
     benchmark_coordinate_sweep_fixed_time,
+    benchmark_sunrise_sunset_multiple,
+    benchmark_spa_time_dependent,
     benchmark_mixed_coordinates_and_times
 );
 

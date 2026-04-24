@@ -15,7 +15,6 @@ authors = ["Klaus Brunner <klaus.brunner@gmail.com>"]
 exclude = [
     ".github/",
     "scripts/",
-    "tests/data/",
     "benches/data/",
 ]
 

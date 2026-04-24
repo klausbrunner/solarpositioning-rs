@@ -18,7 +18,9 @@ fn test_sunrise_sunset_utc_basic() {
         // Transit should be around 20:11 UTC (13:11 PDT)
         assert!((transit.hours() - 20.2).abs() < 0.5);
         // Sunset should be around 03:35 UTC next day (20:35 PDT same day)
-        assert!((sunset.hours() - 3.58).abs() < 0.5);
+        assert!((sunset.hours() - 27.58).abs() < 0.5);
+        assert!(sunrise.hours() < transit.hours());
+        assert!(transit.hours() < sunset.hours());
     } else {
         panic!("Expected RegularDay result");
     }
@@ -154,7 +156,9 @@ fn test_consistency_across_api() {
         // Check that times are reasonable
         assert!(sunrise_utc.hours() > 5.0 && sunrise_utc.hours() < 15.0);
         assert!(transit_utc.hours() > 10.0 && transit_utc.hours() < 20.0);
-        assert!(sunset_utc.hours() >= 0.0 && sunset_utc.hours() < 10.0);
+        assert!(sunset_utc.hours() > 24.0 && sunset_utc.hours() < 34.0);
+        assert!(sunrise_utc.hours() < transit_utc.hours());
+        assert!(transit_utc.hours() < sunset_utc.hours());
     } else {
         panic!("Expected RegularDay result");
     }
@@ -163,7 +167,7 @@ fn test_consistency_across_api() {
 #[cfg(feature = "chrono")]
 #[test]
 fn test_chrono_vs_non_chrono_consistency() {
-    use chrono::{FixedOffset, NaiveDate, TimeZone, Timelike};
+    use chrono::{DateTime, FixedOffset, NaiveDate, TimeZone};
 
     // Non-chrono API
     let result_utc =
@@ -195,21 +199,22 @@ fn test_chrono_vs_non_chrono_consistency() {
                 sunset: sunset_chrono,
             },
         ) => {
-            // Convert chrono DateTime to hours
-            let sunrise_hours = sunrise_chrono.hour() as f64
-                + sunrise_chrono.minute() as f64 / 60.0
-                + sunrise_chrono.second() as f64 / 3600.0;
-            let transit_hours = transit_chrono.hour() as f64
-                + transit_chrono.minute() as f64 / 60.0
-                + transit_chrono.second() as f64 / 3600.0;
-            let sunset_hours = sunset_chrono.hour() as f64
-                + sunset_chrono.minute() as f64 / 60.0
-                + sunset_chrono.second() as f64 / 3600.0;
+            let base_utc_midnight = date;
+            let hours_since_base = |dt: DateTime<FixedOffset>| {
+                dt.signed_duration_since(base_utc_midnight)
+                    .num_milliseconds() as f64
+                    / 3_600_000.0
+            };
+            let sunrise_hours = hours_since_base(sunrise_chrono);
+            let transit_hours = hours_since_base(transit_chrono);
+            let sunset_hours = hours_since_base(sunset_chrono);
 
             // Should match within 1 second (1/3600 hour)
             assert!((sunrise_utc.hours() - sunrise_hours).abs() < 1.0 / 3600.0);
             assert!((transit_utc.hours() - transit_hours).abs() < 1.0 / 3600.0);
             assert!((sunset_utc.hours() - sunset_hours).abs() < 1.0 / 3600.0);
+            assert!(sunrise_chrono < transit_chrono);
+            assert!(transit_chrono < sunset_chrono);
         }
         _ => panic!("Expected RegularDay from both APIs"),
     }

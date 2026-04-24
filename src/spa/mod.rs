@@ -24,7 +24,7 @@ use coefficients::{
 };
 
 #[cfg(feature = "chrono")]
-use chrono::{offset::Offset, DateTime, Datelike, NaiveDate, TimeZone};
+use chrono::{DateTime, Datelike, NaiveDate, TimeZone};
 
 /// Aberration constant in arcseconds.
 const ABERRATION_CONSTANT: f64 = -20.4898;
@@ -278,30 +278,36 @@ fn calculate_apparent_sidereal_time_at_greenwich(
     )
 }
 
-/// Calculate geocentric sun right ascension.
-fn calculate_geocentric_sun_right_ascension(
+/// Calculate geocentric sun right ascension and declination.
+fn calculate_geocentric_sun_coordinates(
     beta_rad: f64,
     epsilon_rad: f64,
     lambda_rad: f64,
-) -> f64 {
+) -> (f64, f64) {
+    let sin_lambda = sin(lambda_rad);
+    let cos_lambda = cos(lambda_rad);
+    let sin_epsilon = sin(epsilon_rad);
+    let cos_epsilon = cos(epsilon_rad);
+    let sin_beta = sin(beta_rad);
+    let cos_beta = cos(beta_rad);
+
     let alpha = atan2(
         mul_add(
-            sin(lambda_rad),
-            cos(epsilon_rad),
-            -(tan(beta_rad) * sin(epsilon_rad)),
+            sin_lambda,
+            cos_epsilon,
+            -(sin_beta / cos_beta) * sin_epsilon,
         ),
-        cos(lambda_rad),
+        cos_lambda,
     );
-    normalize_degrees_0_to_360(radians_to_degrees(alpha))
-}
-
-/// Calculate geocentric sun declination.
-fn calculate_geocentric_sun_declination(beta_rad: f64, epsilon_rad: f64, lambda_rad: f64) -> f64 {
-    asin(mul_add(
-        sin(beta_rad),
-        cos(epsilon_rad),
-        cos(beta_rad) * sin(epsilon_rad) * sin(lambda_rad),
-    ))
+    let delta = asin(mul_add(
+        sin_beta,
+        cos_epsilon,
+        cos_beta * sin_epsilon * sin_lambda,
+    ));
+    (
+        normalize_degrees_0_to_360(radians_to_degrees(alpha)),
+        radians_to_degrees(delta),
+    )
 }
 
 /// Calculate sunrise/sunset times without chrono dependency.
@@ -614,6 +620,8 @@ fn calculate_sunrise_sunset_hours_with_precomputed(
         alpha_deltas,
     );
 
+    let (r_frac, s_frac) = bracket_event_fractions_around_transit(t_frac, r_frac, s_frac);
+
     let transit_hours = crate::HoursUtc::from_hours(t_frac * 24.0);
     let sunrise_hours = crate::HoursUtc::from_hours(r_frac * 24.0);
     let sunset_hours = crate::HoursUtc::from_hours(s_frac * 24.0);
@@ -623,6 +631,22 @@ fn calculate_sunrise_sunset_hours_with_precomputed(
         transit: transit_hours,
         sunset: sunset_hours,
     }
+}
+
+fn bracket_event_fractions_around_transit(
+    transit: f64,
+    mut sunrise: f64,
+    mut sunset: f64,
+) -> (f64, f64) {
+    if sunrise > transit {
+        sunrise -= 1.0;
+    }
+
+    if sunset < transit {
+        sunset += 1.0;
+    }
+
+    (sunrise, sunset)
 }
 
 /// Core sunrise/sunset calculation that returns times as fractions of day.
@@ -858,9 +882,8 @@ fn calculate_alpha_delta(jme: f64, delta_psi: f64, epsilon_degrees: f64) -> Alph
     let lambda = degrees_to_radians(lambda_degrees);
 
     // 3.8.1-3.8.2. Calculate the geocentric sun right ascension and declination
-    let alpha_degrees = calculate_geocentric_sun_right_ascension(beta, epsilon, lambda);
-    let delta_degrees =
-        radians_to_degrees(calculate_geocentric_sun_declination(beta, epsilon, lambda));
+    let (alpha_degrees, delta_degrees) =
+        calculate_geocentric_sun_coordinates(beta, epsilon, lambda);
 
     AlphaDelta {
         alpha: alpha_degrees,
@@ -924,17 +947,6 @@ fn ensure_events_bracket_transit<Tz: TimeZone>(
     else {
         return result;
     };
-
-    // For UTC inputs, keep the simple "UTC date -> UTC events" mapping. The midnight-boundary
-    // correction is intended for local civil dates (non-zero offsets), where the sunrise that
-    // precedes the main daytime can fall just before local midnight.
-    if transit.offset().fix().local_minus_utc() == 0 {
-        return crate::SunriseResult::RegularDay {
-            sunrise,
-            transit,
-            sunset,
-        };
-    }
 
     // Keep sunrise before transit and sunset after it even when SPA wraps near midnight UTC.
     if sunrise > transit {
@@ -1214,11 +1226,8 @@ pub fn spa_time_dependent_from_julian(jd: JulianDate) -> Result<SpaTimeDependent
     let beta = degrees_to_radians(beta_degrees);
     let epsilon = degrees_to_radians(epsilon_degrees);
     let lambda = degrees_to_radians(lambda_degrees);
-    let alpha_degrees = calculate_geocentric_sun_right_ascension(beta, epsilon, lambda);
-
-    // 3.8.2. Calculate the geocentric sun declination, delta (in degrees)
-    let delta_degrees =
-        radians_to_degrees(calculate_geocentric_sun_declination(beta, epsilon, lambda));
+    let (alpha_degrees, delta_degrees) =
+        calculate_geocentric_sun_coordinates(beta, epsilon, lambda);
 
     Ok(SpaTimeDependent {
         r,

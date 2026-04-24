@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Changed
+
+- Preserve UTC day offsets in sunrise/sunset results so events bracket transit consistently.
+
+### Fixed
+
+- Include reference test data in packaged crates.
+
 ## [0.5.1] - 2026-03-24
 
 ### Added

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [0.5.2] - 2026-05-03
+
 ### Changed
 
 - Preserve UTC day offsets in sunrise/sunset results so events bracket transit consistently.

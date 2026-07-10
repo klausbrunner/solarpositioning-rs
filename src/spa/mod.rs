@@ -194,7 +194,7 @@ fn calculate_lbr_polynomial(jme: f64, term_coeffs: &[&[&[f64; 3]]]) -> f64 {
     for (i, term_set) in term_coeffs.iter().enumerate() {
         let mut sum = 0.0;
         for term in *term_set {
-            sum += term[0] * cos(mul_add(term[2], jme, term[1]));
+            sum = mul_add(term[0], cos(mul_add(term[2], jme, term[1])), sum);
         }
         term_sums[i] = sum;
     }
@@ -231,7 +231,7 @@ fn calculate_delta_psi_epsilon(jce: f64, x: &[f64; 5]) -> DeltaPsiEpsilon {
     for (i, pe_term) in TERMS_PE.iter().enumerate() {
         let mut xj_yterm_sum = 0.0;
         for (j, &x_val) in x.iter().enumerate() {
-            xj_yterm_sum += x_val * f64::from(TERMS_Y[i][j]);
+            xj_yterm_sum = mul_add(x_val, f64::from(TERMS_Y[i][j]), xj_yterm_sum);
         }
         let xj_yterm_sum = degrees_to_radians(xj_yterm_sum);
 
@@ -858,10 +858,6 @@ fn calculate_alpha_delta(jme: f64, delta_psi: f64, epsilon_degrees: f64) -> Alph
 
     // 3.2.4. Calculate Earth radius vector, R
     let r = calculate_lbr_polynomial(jme, TERMS_R);
-    assert!(
-        r != 0.0,
-        "Earth radius vector is zero - astronomical impossibility"
-    );
 
     // 3.2.2. Calculate Earth heliocentric longitude, L
     let l_degrees = lbr_to_normalized_degrees(jme, TERMS_L);
@@ -1005,7 +1001,8 @@ fn limit_h_prime(h_prime: f64) -> f64 {
 /// Iterator over `Result<(Horizon, SunriseResult)>`
 ///
 /// # Errors
-/// Returns error for invalid coordinates (latitude outside ±90°, longitude outside ±180°)
+/// Returns error for invalid coordinates (latitude outside ±90°, longitude outside ±180°) or
+/// invalid custom horizon elevation angles.
 ///
 /// # Panics
 /// Does not panic.
@@ -1089,11 +1086,13 @@ where
 
     horizons.into_iter().map(move |horizon| {
         let (base_utc_date, nu_degrees, alpha_deltas) = precomputed.clone()?;
+        let elevation_angle = horizon.elevation_angle();
+        check_elevation_angle(elevation_angle)?;
         let hours_result = calculate_sunrise_sunset_hours_with_precomputed(
             latitude,
             longitude,
             delta_t,
-            horizon.elevation_angle(),
+            elevation_angle,
             nu_degrees,
             alpha_deltas,
         );
@@ -1155,8 +1154,6 @@ where
 ///
 /// # Errors
 /// Returns error if Julian date calculation fails for the provided datetime
-///
-/// # Panics
 #[cfg(feature = "chrono")]
 #[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
 #[allow(clippy::needless_pass_by_value)]
@@ -1174,9 +1171,6 @@ pub fn spa_time_dependent_parts<Tz: TimeZone>(
 ///
 /// # Errors
 /// Returns error if Julian date is invalid.
-///
-/// # Panics
-/// Panics if Earth radius vector is zero (astronomical impossibility).
 pub fn spa_time_dependent_from_julian(jd: JulianDate) -> Result<SpaTimeDependent> {
     let jme = jd.julian_ephemeris_millennium();
     let jce = jd.julian_ephemeris_century();
@@ -1189,12 +1183,6 @@ pub fn spa_time_dependent_from_julian(jd: JulianDate) -> Result<SpaTimeDependent
 
     // 3.2.4. Calculate the Earth radius vector, R (in Astronomical Units, AU)
     let r = calculate_lbr_polynomial(jme, TERMS_R);
-
-    // Earth's radius vector should never be zero (would mean Earth at center of Sun)
-    assert!(
-        r != 0.0,
-        "Earth radius vector is zero - astronomical impossibility"
-    );
 
     // 3.2.5. Calculate the geocentric longitude, theta (in degrees)
     let theta_degrees = normalize_degrees_0_to_360(l_degrees + 180.0);
@@ -1296,44 +1284,58 @@ pub fn spa_with_time_dependent_parts(
     let xi = degrees_to_radians(xi_degrees);
     let phi = degrees_to_radians(latitude);
     let delta = degrees_to_radians(time_dependent.delta_degrees);
+    let sin_xi = sin(xi);
+    let sin_phi = sin(phi);
+    let cos_phi = cos(phi);
+    let sin_delta = sin(delta);
+    let cos_delta = cos(delta);
+    let sin_h = sin(h);
+    let cos_h = cos(h);
 
     let u = atan(EARTH_FLATTENING_FACTOR * tan(phi));
     let y = mul_add(
         EARTH_FLATTENING_FACTOR,
         sin(u),
-        (elevation / EARTH_RADIUS_METERS) * sin(phi),
+        (elevation / EARTH_RADIUS_METERS) * sin_phi,
     );
-    let x = mul_add(elevation / EARTH_RADIUS_METERS, cos(phi), cos(u));
+    let x = mul_add(elevation / EARTH_RADIUS_METERS, cos_phi, cos(u));
 
     let delta_alpha_prime_degrees = radians_to_degrees(atan2(
-        -x * sin(xi) * sin(h),
-        mul_add(x * sin(xi), -cos(h), cos(delta)),
+        -x * sin_xi * sin_h,
+        mul_add(x * sin_xi, -cos_h, cos_delta),
     ));
 
-    let delta_prime = radians_to_degrees(atan2(
-        mul_add(y, -sin(xi), sin(delta)) * cos(degrees_to_radians(delta_alpha_prime_degrees)),
-        mul_add(x * sin(xi), -cos(h), cos(delta)),
+    let delta_prime_degrees = radians_to_degrees(atan2(
+        mul_add(y, -sin_xi, sin_delta) * cos(degrees_to_radians(delta_alpha_prime_degrees)),
+        mul_add(x * sin_xi, -cos_h, cos_delta),
     ));
 
     // 3.12. Calculate the topocentric local hour angle, H' (in degrees)
     let h_prime_degrees = h_degrees - delta_alpha_prime_degrees;
+    let delta_prime = degrees_to_radians(delta_prime_degrees);
+    let h_prime = degrees_to_radians(h_prime_degrees);
+    let sin_delta_prime = sin(delta_prime);
+    let cos_delta_prime = cos(delta_prime);
+    let sin_h_prime = sin(h_prime);
+    let cos_h_prime = cos(h_prime);
 
     // 3.13. Calculate the topocentric zenith and azimuth angles
     let zenith_angle = radians_to_degrees(acos(mul_add(
-        sin(degrees_to_radians(latitude)),
-        sin(degrees_to_radians(delta_prime)),
-        cos(degrees_to_radians(latitude))
-            * cos(degrees_to_radians(delta_prime))
-            * cos(degrees_to_radians(h_prime_degrees)),
+        sin_phi,
+        sin_delta_prime,
+        cos_phi * cos_delta_prime * cos_h_prime,
     )));
 
     // 3.14. Calculate the topocentric azimuth angle
     let azimuth = normalize_degrees_0_to_360(
         180.0
             + radians_to_degrees(atan2(
-                sin(degrees_to_radians(h_prime_degrees)),
-                cos(degrees_to_radians(h_prime_degrees)) * sin(degrees_to_radians(latitude))
-                    - tan(degrees_to_radians(delta_prime)) * cos(degrees_to_radians(latitude)),
+                sin_h_prime,
+                mul_add(
+                    sin_delta_prime / cos_delta_prime,
+                    -cos_phi,
+                    cos_h_prime * sin_phi,
+                ),
             )),
     );
 
@@ -1531,6 +1533,24 @@ mod tests {
                 crate::SunriseResult::AllNight { transit: t2 },
             ) => assert_eq!(t1, t2),
             _ => panic!("expected matching polar-day/night results between bulk and individual"),
+        }
+    }
+
+    #[test]
+    fn test_sunrise_sunset_multiple_rejects_invalid_custom_horizons() {
+        let datetime = "2023-06-21T12:00:00Z"
+            .parse::<DateTime<FixedOffset>>()
+            .unwrap();
+
+        for horizon in [Horizon::Custom(91.0), Horizon::Custom(f64::NAN)] {
+            let result = sunrise_sunset_multiple(datetime, 37.7749, -122.4194, 69.0, [horizon])
+                .next()
+                .unwrap();
+
+            assert!(matches!(
+                result,
+                Err(crate::Error::InvalidElevationAngle { .. })
+            ));
         }
     }
 

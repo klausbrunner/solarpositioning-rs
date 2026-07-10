@@ -5,6 +5,8 @@
 use chrono::{DateTime, FixedOffset, TimeZone, Utc};
 use solar_positioning::{spa, RefractionCorrection};
 
+const TOLERANCE_DEGREES: f64 = 0.0001;
+
 #[test]
 fn test_compare_with_java_spa() {
     // Use the exact same parameters as one of the reference data points
@@ -19,39 +21,26 @@ fn test_compare_with_java_spa() {
     let expected_azimuth = 0.188643;
     let expected_zenith = 34.269919;
 
-    println!("Testing against Java reference data:");
-    println!("DateTime: {}", utc_datetime);
-    println!("Latitude: {:.6}°", latitude);
-    println!("Longitude: {:.6}°", longitude);
-    println!("Expected azimuth: {:.6}°", expected_azimuth);
-    println!("Expected zenith: {:.6}°", expected_zenith);
-
-    let result = spa::solar_position(
+    let position = spa::solar_position(
         datetime,
         latitude,
         longitude,
         0.0,                                                    // elevation (same as reference)
         0.0,                                                    // deltaT (same as reference)
         Some(RefractionCorrection::new(1000.0, 10.0).unwrap()), // atmospheric conditions
-    );
+    )
+    .unwrap();
 
-    assert!(result.is_ok());
-    let position = result.unwrap();
-
-    println!("Rust calculated azimuth: {:.6}°", position.azimuth());
-    println!("Rust calculated zenith: {:.6}°", position.zenith_angle());
-
-    let azimuth_error = (position.azimuth() - expected_azimuth).abs();
+    let azimuth_difference = (position.azimuth() - expected_azimuth).abs();
+    let azimuth_error = azimuth_difference.min(360.0 - azimuth_difference);
     let zenith_error = (position.zenith_angle() - expected_zenith).abs();
 
-    println!("Azimuth error: {:.6}°", azimuth_error);
-    println!("Zenith error: {:.6}°", zenith_error);
-
-    // For debugging, let's see if we're even in the right ballpark
-    // The Java implementation should be accurate to 0.0003°, so let's see
-    // how far off we are
-    assert!(azimuth_error < 180.0, "Azimuth is completely wrong");
-    assert!(zenith_error < 90.0, "Zenith is completely wrong");
-
-    println!("Results are at least in the right general range");
+    assert!(
+        azimuth_error < TOLERANCE_DEGREES,
+        "azimuth error {azimuth_error:.6}° exceeds {TOLERANCE_DEGREES:.6}°"
+    );
+    assert!(
+        zenith_error < TOLERANCE_DEGREES,
+        "zenith error {zenith_error:.6}° exceeds {TOLERANCE_DEGREES:.6}°"
+    );
 }

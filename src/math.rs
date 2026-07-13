@@ -63,6 +63,17 @@ pub fn cos(x: f64) -> f64 {
     return libm::cos(x);
 }
 
+/// Computes sin(x) and cos(x) together using the appropriate function for the
+/// compilation target.
+#[inline]
+pub fn sin_cos(x: f64) -> (f64, f64) {
+    #[cfg(feature = "std")]
+    return x.sin_cos();
+
+    #[cfg(not(feature = "std"))]
+    return libm::sincos(x);
+}
+
 /// Computes tan(x) using the appropriate function for the compilation target.
 #[inline]
 pub fn tan(x: f64) -> f64 {
@@ -200,6 +211,9 @@ mod tests {
         // Basic smoke tests - the actual implementation will depend on features
         assert!((sin(0.0)).abs() < EPSILON);
         assert!((cos(0.0) - 1.0).abs() < EPSILON);
+        let (sine, cosine) = sin_cos(0.0);
+        assert!(sine.abs() < EPSILON);
+        assert!((cosine - 1.0).abs() < EPSILON);
         assert!((tan(0.0)).abs() < EPSILON);
     }
 }

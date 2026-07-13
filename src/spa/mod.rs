@@ -13,7 +13,7 @@
 use crate::error::{check_coordinates, check_elevation_angle};
 use crate::math::{
     acos, asin, atan, atan2, cos, degrees_to_radians, mul_add, normalize_degrees_0_to_360,
-    polynomial, powi, radians_to_degrees, rem_euclid, sin, tan,
+    polynomial, powi, radians_to_degrees, rem_euclid, sin, sin_cos, tan,
 };
 use crate::time::JulianDate;
 use crate::{Horizon, RefractionCorrection, Result, SolarPosition};
@@ -236,8 +236,9 @@ fn calculate_delta_psi_epsilon(jce: f64, x: &[f64; 5]) -> DeltaPsiEpsilon {
         let xj_yterm_sum = degrees_to_radians(xj_yterm_sum);
 
         // Use Math.fma equivalent: a * b + c
-        let delta_psi_contrib = mul_add(pe_term[1], jce, pe_term[0]) * sin(xj_yterm_sum);
-        let delta_epsilon_contrib = mul_add(pe_term[3], jce, pe_term[2]) * cos(xj_yterm_sum);
+        let (sin_sum, cos_sum) = sin_cos(xj_yterm_sum);
+        let delta_psi_contrib = mul_add(pe_term[1], jce, pe_term[0]) * sin_sum;
+        let delta_epsilon_contrib = mul_add(pe_term[3], jce, pe_term[2]) * cos_sum;
 
         delta_psi += delta_psi_contrib;
         delta_epsilon += delta_epsilon_contrib;
@@ -284,12 +285,9 @@ fn calculate_geocentric_sun_coordinates(
     epsilon_rad: f64,
     lambda_rad: f64,
 ) -> (f64, f64) {
-    let sin_lambda = sin(lambda_rad);
-    let cos_lambda = cos(lambda_rad);
-    let sin_epsilon = sin(epsilon_rad);
-    let cos_epsilon = cos(epsilon_rad);
-    let sin_beta = sin(beta_rad);
-    let cos_beta = cos(beta_rad);
+    let (sin_lambda, cos_lambda) = sin_cos(lambda_rad);
+    let (sin_epsilon, cos_epsilon) = sin_cos(epsilon_rad);
+    let (sin_beta, cos_beta) = sin_cos(beta_rad);
 
     let alpha = atan2(
         mul_add(
@@ -586,8 +584,9 @@ fn calculate_sunrise_sunset_hours_with_precomputed(
     let phi = degrees_to_radians(latitude);
     let delta1_rad = degrees_to_radians(alpha_deltas[1].delta);
     let elevation_rad = degrees_to_radians(elevation_angle);
-    let acos_arg =
-        mul_add(sin(phi), -sin(delta1_rad), sin(elevation_rad)) / (cos(phi) * cos(delta1_rad));
+    let (sin_phi, cos_phi) = sin_cos(phi);
+    let (sin_delta1, cos_delta1) = sin_cos(delta1_rad);
+    let acos_arg = mul_add(sin_phi, -sin_delta1, sin(elevation_rad)) / (cos_phi * cos_delta1);
 
     let polar_transit_hours =
         calculate_transit_hours(transit_m, longitude, delta_t, nu_degrees, &alpha_deltas);
@@ -1285,20 +1284,18 @@ pub fn spa_with_time_dependent_parts(
     let phi = degrees_to_radians(latitude);
     let delta = degrees_to_radians(time_dependent.delta_degrees);
     let sin_xi = sin(xi);
-    let sin_phi = sin(phi);
-    let cos_phi = cos(phi);
-    let sin_delta = sin(delta);
-    let cos_delta = cos(delta);
-    let sin_h = sin(h);
-    let cos_h = cos(h);
+    let (sin_phi, cos_phi) = sin_cos(phi);
+    let (sin_delta, cos_delta) = sin_cos(delta);
+    let (sin_h, cos_h) = sin_cos(h);
 
     let u = atan(EARTH_FLATTENING_FACTOR * tan(phi));
+    let (sin_u, cos_u) = sin_cos(u);
     let y = mul_add(
         EARTH_FLATTENING_FACTOR,
-        sin(u),
+        sin_u,
         (elevation / EARTH_RADIUS_METERS) * sin_phi,
     );
-    let x = mul_add(elevation / EARTH_RADIUS_METERS, cos_phi, cos(u));
+    let x = mul_add(elevation / EARTH_RADIUS_METERS, cos_phi, cos_u);
 
     let delta_alpha_prime_degrees = radians_to_degrees(atan2(
         -x * sin_xi * sin_h,
@@ -1314,10 +1311,8 @@ pub fn spa_with_time_dependent_parts(
     let h_prime_degrees = h_degrees - delta_alpha_prime_degrees;
     let delta_prime = degrees_to_radians(delta_prime_degrees);
     let h_prime = degrees_to_radians(h_prime_degrees);
-    let sin_delta_prime = sin(delta_prime);
-    let cos_delta_prime = cos(delta_prime);
-    let sin_h_prime = sin(h_prime);
-    let cos_h_prime = cos(h_prime);
+    let (sin_delta_prime, cos_delta_prime) = sin_cos(delta_prime);
+    let (sin_h_prime, cos_h_prime) = sin_cos(h_prime);
 
     // 3.13. Calculate the topocentric zenith and azimuth angles
     let zenith_angle = radians_to_degrees(acos(mul_add(

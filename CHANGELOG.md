@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [0.5.3] - 2026-08-12
+
 ### Changed
 
 - Improve SPA performance (a little) by reusing trigonometric calculations.

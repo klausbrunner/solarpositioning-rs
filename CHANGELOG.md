@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Changed
+
+- Improve SPA performance (a little) by reusing trigonometric calculations.
+
+### Fixed
+
+- Reject invalid custom horizons in bulk sunrise/sunset calculations.
+
 ## [0.5.2] - 2026-05-03
 
 ### Changed

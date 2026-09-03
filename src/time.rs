@@ -267,13 +267,14 @@ fn calculate_julian_date(
     second: f64,
 ) -> f64 {
     let mut y = year;
-    let mut m = i32::try_from(month).expect("month should be valid i32");
 
     // Adjust for January and February being treated as months 13 and 14 of previous year
-    if m < 3 {
+    let m = if month < 3 {
         y -= 1;
-        m += 12;
-    }
+        month + 12
+    } else {
+        month
+    };
 
     // Calculate fractional day
     let d = f64::from(day) + (f64::from(hour) + (f64::from(minute) + second / 60.0) / 60.0) / 24.0;

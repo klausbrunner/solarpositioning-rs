@@ -43,7 +43,6 @@ default = ["std", "chrono"]
 std = []
 chrono = ["dep:chrono"]
 libm = ["dep:libm"]
-unstable = []
 
 [profile.release]
 lto = true

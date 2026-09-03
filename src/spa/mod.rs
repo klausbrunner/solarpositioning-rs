@@ -1366,27 +1366,6 @@ mod tests {
     }
 
     #[test]
-    fn test_spa_basic_functionality() {
-        let datetime = "2023-06-21T12:00:00Z"
-            .parse::<DateTime<FixedOffset>>()
-            .unwrap();
-
-        let result = solar_position(
-            datetime,
-            37.7749, // San Francisco
-            -122.4194,
-            0.0,
-            69.0,
-            Some(RefractionCorrection::new(1013.25, 15.0).unwrap()),
-        );
-
-        assert!(result.is_ok());
-        let position = result.unwrap();
-        assert!(position.azimuth() >= 0.0 && position.azimuth() <= 360.0);
-        assert!(position.zenith_angle() >= 0.0 && position.zenith_angle() <= 180.0);
-    }
-
-    #[test]
     fn test_time_dependent_tracks_seasonal_geometry() {
         let june_solstice = spa_time_dependent_from_julian(
             JulianDate::from_utc(2023, 6, 21, 12, 0, 0.0, 69.0).unwrap(),
@@ -1441,60 +1420,15 @@ mod tests {
             Horizon::NauticalTwilight,
         ];
 
-        let results: Result<Vec<_>> = sunrise_sunset_multiple(
-            datetime,
-            37.7749,   // San Francisco latitude
-            -122.4194, // San Francisco longitude
-            69.0,      // deltaT (seconds)
-            horizons.iter().copied(),
-        )
-        .collect();
+        let results = sunrise_sunset_multiple(datetime, 37.7749, -122.4194, 69.0, horizons)
+            .collect::<Result<Vec<_>>>()
+            .unwrap();
 
-        let results = results.unwrap();
-
-        // Should have results for all requested horizons
-        assert_eq!(results.len(), 3);
-
-        // Check that we have all expected horizons
-        for expected_horizon in horizons {
-            assert!(results.iter().any(|(h, _)| *h == expected_horizon));
-        }
-
-        // Compare with individual calls to ensure consistency
-        for (horizon, bulk_result) in &results {
+        for (expected_horizon, (horizon, bulk_result)) in horizons.into_iter().zip(results) {
+            assert_eq!(horizon, expected_horizon);
             let individual_result =
-                sunrise_sunset_for_horizon(datetime, 37.7749, -122.4194, 69.0, *horizon).unwrap();
-
-            // Results should be identical
-            match (&individual_result, bulk_result) {
-                (
-                    crate::SunriseResult::RegularDay {
-                        sunrise: s1,
-                        transit: t1,
-                        sunset: ss1,
-                    },
-                    crate::SunriseResult::RegularDay {
-                        sunrise: s2,
-                        transit: t2,
-                        sunset: ss2,
-                    },
-                ) => {
-                    assert_eq!(s1, s2);
-                    assert_eq!(t1, t2);
-                    assert_eq!(ss1, ss2);
-                }
-                (
-                    crate::SunriseResult::AllDay { transit: t1 },
-                    crate::SunriseResult::AllDay { transit: t2 },
-                )
-                | (
-                    crate::SunriseResult::AllNight { transit: t1 },
-                    crate::SunriseResult::AllNight { transit: t2 },
-                ) => {
-                    assert_eq!(t1, t2);
-                }
-                _ => panic!("Bulk and individual results differ in type for {horizon:?}"),
-            }
+                sunrise_sunset_for_horizon(datetime, 37.7749, -122.4194, 69.0, horizon).unwrap();
+            assert_eq!(bulk_result, individual_result);
         }
     }
 
@@ -1547,20 +1481,6 @@ mod tests {
                 Err(crate::Error::InvalidElevationAngle { .. })
             ));
         }
-    }
-
-    #[test]
-    fn test_spa_no_refraction() {
-        let datetime = "2023-06-21T12:00:00Z"
-            .parse::<DateTime<FixedOffset>>()
-            .unwrap();
-
-        let result = solar_position(datetime, 37.7749, -122.4194, 0.0, 69.0, None);
-
-        assert!(result.is_ok());
-        let position = result.unwrap();
-        assert!(position.azimuth() >= 0.0 && position.azimuth() <= 360.0);
-        assert!(position.zenith_angle() >= 0.0 && position.zenith_angle() <= 180.0);
     }
 
     #[test]

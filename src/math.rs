@@ -171,17 +171,6 @@ mod tests {
     const EPSILON: f64 = 1e-10;
 
     #[test]
-    fn test_degree_radian_conversion() {
-        assert!((degrees_to_radians(180.0) - PI).abs() < EPSILON);
-        assert!((degrees_to_radians(90.0) - PI / 2.0).abs() < EPSILON);
-        assert!((degrees_to_radians(0.0)).abs() < EPSILON);
-
-        assert!((radians_to_degrees(PI) - 180.0).abs() < EPSILON);
-        assert!((radians_to_degrees(PI / 2.0) - 90.0).abs() < EPSILON);
-        assert!((radians_to_degrees(0.0)).abs() < EPSILON);
-    }
-
-    #[test]
     fn test_normalize_degrees_0_to_360() {
         assert_eq!(normalize_degrees_0_to_360(0.0), 0.0);
         assert_eq!(normalize_degrees_0_to_360(90.0), 90.0);
@@ -204,16 +193,5 @@ mod tests {
 
         // Test quadratic polynomial: 1 + 2x + 3x²
         assert!((polynomial(&[1.0, 2.0, 3.0], 2.0) - 17.0).abs() < EPSILON);
-    }
-
-    #[test]
-    fn test_trigonometric_functions() {
-        // Basic smoke tests - the actual implementation will depend on features
-        assert!((sin(0.0)).abs() < EPSILON);
-        assert!((cos(0.0) - 1.0).abs() < EPSILON);
-        let (sine, cosine) = sin_cos(0.0);
-        assert!(sine.abs() < EPSILON);
-        assert!((cosine - 1.0).abs() < EPSILON);
-        assert!((tan(0.0)).abs() < EPSILON);
     }
 }

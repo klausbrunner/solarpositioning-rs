@@ -3,38 +3,6 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Through
 use solar_positioning::{grena3, spa};
 use std::hint::black_box;
 
-/// Benchmark configuration for different usage patterns
-#[derive(Clone)]
-#[allow(dead_code)]
-struct BenchmarkScenario {
-    name: &'static str,
-    description: &'static str,
-}
-
-#[allow(dead_code)]
-const SCENARIOS: &[BenchmarkScenario] = &[
-    BenchmarkScenario {
-        name: "single_calculation",
-        description: "Single solar position calculation (baseline)",
-    },
-    BenchmarkScenario {
-        name: "time_series_fixed_location",
-        description: "Time series at fixed location (weather station pattern)",
-    },
-    BenchmarkScenario {
-        name: "coordinate_sweep_fixed_time",
-        description: "Geographic grid at fixed time (solar resource mapping)",
-    },
-    BenchmarkScenario {
-        name: "mixed_coordinates_and_times",
-        description: "Combined coordinate and time variations",
-    },
-    BenchmarkScenario {
-        name: "random_access_pattern",
-        description: "Random locations and times (worst case for caching)",
-    },
-];
-
 fn benchmark_single_calculation(c: &mut Criterion) {
     let mut group = c.benchmark_group("single");
     group.sample_size(10);

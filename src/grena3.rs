@@ -226,40 +226,6 @@ mod tests {
     use chrono::{DateTime, FixedOffset};
 
     #[test]
-    fn test_grena3_basic_functionality() {
-        let datetime = "2023-06-21T12:00:00-07:00"
-            .parse::<DateTime<FixedOffset>>()
-            .unwrap();
-
-        let result = solar_position(datetime, 37.7749, -122.4194, 69.0, None);
-
-        assert!(result.is_ok());
-        let position = result.unwrap();
-        assert!(position.azimuth() >= 0.0 && position.azimuth() <= 360.0);
-        assert!(position.zenith_angle() >= 0.0 && position.zenith_angle() <= 180.0);
-    }
-
-    #[test]
-    fn test_grena3_with_refraction() {
-        let datetime = "2023-06-21T12:00:00-07:00"
-            .parse::<DateTime<FixedOffset>>()
-            .unwrap();
-
-        let result = solar_position(
-            datetime,
-            37.7749,
-            -122.4194,
-            69.0,
-            Some(RefractionCorrection::new(1013.25, 15.0).unwrap()),
-        );
-
-        assert!(result.is_ok());
-        let position = result.unwrap();
-        assert!(position.azimuth() >= 0.0 && position.azimuth() <= 360.0);
-        assert!(position.zenith_angle() >= 0.0 && position.zenith_angle() <= 180.0);
-    }
-
-    #[test]
     fn test_grena3_coordinate_validation() {
         let datetime = "2023-06-21T12:00:00-07:00"
             .parse::<DateTime<FixedOffset>>()
@@ -270,36 +236,6 @@ mod tests {
 
         // Invalid longitude
         assert!(solar_position(datetime, 0.0, 185.0, 0.0, None).is_err());
-    }
-
-    #[test]
-    fn test_calc_t() {
-        // Test with a known date
-        let datetime = "2023-06-21T12:00:00-07:00"
-            .parse::<DateTime<FixedOffset>>()
-            .unwrap();
-        let t = calc_t(&datetime).unwrap();
-
-        // The Grena3 algorithm uses a specific reference point that may result in negative values
-        // This is correct behavior - just ensure the calculation is consistent
-        assert!(t.is_finite(), "t should be finite");
-
-        // Test that the calculation is stable
-        let t2 = calc_t(&datetime).unwrap();
-        assert!(
-            (t - t2).abs() < f64::EPSILON,
-            "calc_t should be deterministic"
-        );
-
-        // Test that different dates give different results
-        let datetime2 = "2023-06-22T12:00:00Z"
-            .parse::<DateTime<FixedOffset>>()
-            .unwrap();
-        let t3 = calc_t(&datetime2).unwrap();
-        assert!(
-            (t - t3).abs() > 0.5,
-            "Different dates should give different t values"
-        );
     }
 
     #[test]

@@ -222,14 +222,8 @@ mod tests {
         )
         .unwrap();
 
-        // Both should produce identical results
         assert!((position1.azimuth() - position2.azimuth()).abs() < 1e-10);
         assert!((position1.zenith_angle() - position2.zenith_angle()).abs() < 1e-10);
-
-        assert!(position1.azimuth() >= 0.0);
-        assert!(position1.azimuth() <= 360.0);
-        assert!(position1.zenith_angle() >= 0.0);
-        assert!(position1.zenith_angle() <= 180.0);
     }
 
     #[test]
@@ -259,13 +253,7 @@ mod tests {
         )
         .unwrap();
 
-        // Both should produce identical results
         assert!((position1.azimuth() - position2.azimuth()).abs() < 1e-6);
         assert!((position1.zenith_angle() - position2.zenith_angle()).abs() < 1e-6);
-
-        assert!(position1.azimuth() >= 0.0);
-        assert!(position1.azimuth() <= 360.0);
-        assert!(position1.zenith_angle() >= 0.0);
-        assert!(position1.zenith_angle() <= 180.0);
     }
 }

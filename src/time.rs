@@ -1,7 +1,7 @@
 //! Time-related calculations for solar positioning.
 //!
 //! This module provides Julian date calculations and ΔT (Delta T) estimation
-//! following the algorithms from NREL SPA and Espenak & Meeus.
+//! following NREL SPA and Espenak & Meeus, with updated ΔT fits from 2015 onwards.
 
 #![allow(clippy::unreadable_literal)]
 #![allow(clippy::many_single_char_names)]
@@ -313,14 +313,18 @@ fn days_in_month(year: i32, month: u32) -> u32 {
 /// ΔT (Delta T) estimation functions.
 ///
 /// ΔT represents the difference between Terrestrial Time (TT) and Universal Time (UT1).
-/// These estimates are based on Espenak and Meeus polynomial fits updated in 2014.
+/// Based on Espenak and Meeus, with [Espenak's 2014 update](https://www.eclipsewise.com/help/deltatpoly2014.html).
+/// The branches from 2015 onwards use a [2026 adaptation](https://klaus.brunners.name/posts/delta-t-polynomials/):
+/// a quartic fitted to IERS observations through mid-2026, followed by a quadratic
+/// fitted to a median of simulations by Agnew (2026).
+///
+/// Future values are (very) uncertain extrapolations, particularly beyond 2100.
 pub struct DeltaT;
 
 impl DeltaT {
     /// Estimates ΔT for a given decimal year.
     ///
-    /// Based on polynomial fits from Espenak & Meeus, updated 2014.
-    /// See: <https://www.eclipsewise.com/help/deltatpoly2014.html>
+    /// Uses the historical polynomials and updated fits described in [`DeltaT`].
     ///
     /// # Arguments
     /// * `decimal_year` - Year with fractional part (e.g., 2024.5 for mid-2024)
@@ -446,9 +450,22 @@ impl DeltaT {
         } else if year < 2015.0 {
             let t = year - 2005.0;
             polynomial(&[64.69, 0.2930], t)
-        } else if year <= 3000.0 {
+        } else if year < 2026.5 {
             let t = year - 2015.0;
-            polynomial(&[67.62, 0.3645, 0.0039755], t)
+            // Retain the full fitted precision; the branches join in value and slope at 2026.5.
+            polynomial(
+                &[
+                    67.62,
+                    0.49005948394643584,
+                    0.01470571892410194,
+                    -0.011854572510804597,
+                    0.0006843204576469319,
+                ],
+                t,
+            )
+        } else if year <= 3000.0 {
+            let t = year - 2026.5;
+            polynomial(&[69.14, 0.28805287963416737, 0.0057380400318460655], t)
         } else {
             return Err(Error::InvalidDateTime {
                 message: "ΔT estimates not available beyond year 3000",
@@ -458,7 +475,7 @@ impl DeltaT {
         Ok(delta_t)
     }
 
-    /// Estimates ΔT from year and month.
+    /// Estimates ΔT at the midpoint of the given calendar month.
     ///
     /// Calculates decimal year as: year + (month - 0.5) / 12
     ///
@@ -489,6 +506,7 @@ impl DeltaT {
     ///
     /// Convenience method that extracts the year and month from any chrono type
     /// that implements `Datelike` (`DateTime`, `NaiveDateTime`, `NaiveDate`, etc.).
+    /// Uses the midpoint of its calendar month, ignoring the day and time.
     ///
     /// # Arguments
     /// * `date` - Any date-like type
@@ -617,6 +635,98 @@ mod tests {
     }
 
     #[test]
+    fn test_delta_t_adaptation_reference_values() {
+        let cases = [
+            (2000.0, 63.86),
+            (2005.0, 64.69),
+            (2010.0, 66.155),
+            (2014.999, 67.619707),
+            (2015.0, 67.62),
+            (2017.0, 68.5750543908252),
+            (2020.0, 69.3838191150135),
+            (2023.0, 69.2150773517039),
+            (2026.0, 69.03074612175494),
+            (2026.5, 69.14),
+            (2027.0, 69.28546094982505),
+            (2030.0, 70.21847606910971),
+            (2045.0, 76.43282247413141),
+            (2100.0, 121.31021341515171),
+            (3000.0, 5787.51292709445),
+        ];
+
+        for (year, expected) in cases {
+            let actual = DeltaT::estimate(year).unwrap();
+            assert!(
+                (actual - expected).abs() < EPSILON,
+                "year {year}: {actual} vs {expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_delta_t_recent_iers_observations() {
+        // IERS 20u24 C04, downloaded 14 September 2026; ΔT = 32.184 + TAI-UTC - UT1-UTC.
+        let cases = [
+            (2015.0, 67.6439282),
+            (2017.0, 68.5927130),
+            (2020.0, 69.3611665),
+            (2023.0, 69.2038475),
+            (2026.0, 69.1099131),
+            (2026.4986301369863, 69.1691721),
+        ];
+
+        for (year, observed) in cases {
+            let estimated = DeltaT::estimate(year).unwrap();
+            assert!(
+                (estimated - observed).abs() < 0.2,
+                "year {year}: {estimated} vs {observed}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_delta_t_continuous_at_updated_boundaries() {
+        for (year, expected) in [(2015.0_f64, 67.62), (2026.5, 69.14)] {
+            for adjacent_year in [
+                f64::from_bits(year.to_bits() - 1),
+                year,
+                f64::from_bits(year.to_bits() + 1),
+            ] {
+                let actual = DeltaT::estimate(adjacent_year).unwrap();
+                assert!(
+                    (actual - expected).abs() < 1e-12,
+                    "year {adjacent_year}: {actual}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_delta_t_smooth_join_in_mid_2026() {
+        let year = 2026.5;
+        let step = 1e-4;
+        let value = DeltaT::estimate(year).unwrap();
+        let left_slope = (value - DeltaT::estimate(year - step).unwrap()) / step;
+        let right_slope = (DeltaT::estimate(year + step).unwrap() - value) / step;
+        assert!((left_slope - right_slope).abs() < 2e-5);
+    }
+
+    #[test]
+    fn test_delta_t_date_helpers_at_updated_branches() {
+        for (year, month) in [(2014, 12), (2015, 1), (2026, 6), (2026, 7)] {
+            let decimal_year = f64::from(year) + (f64::from(month) - 0.5) / 12.0;
+            let expected = DeltaT::estimate(decimal_year).unwrap();
+            assert_eq!(DeltaT::estimate_from_date(year, month).unwrap(), expected);
+
+            #[cfg(feature = "chrono")]
+            for day in [1, 28] {
+                let date = chrono::NaiveDate::from_ymd_opt(year, month, day).unwrap();
+                assert_eq!(DeltaT::estimate_from_date_like(date).unwrap(), expected);
+            }
+        }
+    }
+
+    #[test]
     fn test_delta_t_historical_estimates() {
         let delta_t_1900 = DeltaT::estimate(1900.0).unwrap();
         let delta_t_1950 = DeltaT::estimate(1950.0).unwrap();
@@ -632,6 +742,7 @@ mod tests {
         assert!(DeltaT::estimate(3000.0).is_ok());
         assert!(DeltaT::estimate(-501.0).is_err());
         assert!(DeltaT::estimate(3001.0).is_err()); // Should fail beyond 3000
+        assert!(DeltaT::estimate(f64::from_bits(3000.0_f64.to_bits() + 1)).is_err());
     }
 
     #[test]

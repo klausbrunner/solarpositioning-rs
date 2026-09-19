@@ -135,7 +135,9 @@ high-precision ephemerides (JPL Horizons, USNO almanacs, etc.).
 
 Delta T (ΔT) is the difference between terrestrial time and UT1 ([Wikipedia](<https://en.wikipedia.org/wiki/ΔT_(timekeeping)>)). For many applications it's negligible (~70 seconds in 2025). For maximum accuracy, use observed values (available from US Naval Observatory) or estimates.
 
-The `time::DeltaT` estimator uses polynomial fits from [Espenak and Meeus](http://eclipse.gsfc.nasa.gov/SEcat5/deltatpoly.html) (2007, updated 2014). Current extrapolated values are slightly high (~2 seconds). This gap will widen ([Morrison et al. 2021](https://royalsocietypublishing.org/doi/10.1098/rspa.2020.0776)). However, this should not matter for most applications.
+`time::DeltaT` provides such estimates based on polynomials originally published by [Espenak and Meeus](http://eclipse.gsfc.nasa.gov/SEcat5/deltatpoly.html) and [updated by Espenak in 2014](https://www.eclipsewise.com/help/deltatpoly2014.html), with custom replacement branches from 2015 onwards.
+The [derivation and comparisons](https://klaus.brunners.name/posts/delta-t-polynomials/) describe the fit and its
+limitations. Future values remain uncertain, and extrapolation beyond 2100 is particularly speculative.
 
 ## License
 

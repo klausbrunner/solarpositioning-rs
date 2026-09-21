@@ -17,8 +17,8 @@ jobs:
     name: Code Quality
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions/checkout@v7
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
@@ -26,6 +26,7 @@ jobs:
       - run: cargo clippy --all-targets --all-features -- -D clippy::correctness -D clippy::suspicious -D clippy::complexity -D clippy::perf -D clippy::style -A clippy::approx_constant -A clippy::needless_range_loop -A clippy::too_many_arguments -A clippy::unnecessary_wraps -A clippy::suboptimal_flops
         env:
           RUSTFLAGS: ""
+          CARGO_BUILD_WARNINGS: warn
       - run: cargo doc --all-features --no-deps
 
   test:
@@ -41,8 +42,8 @@ jobs:
             rust: 1.70.0
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions/checkout@v7
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           toolchain: ${{ matrix.rust }}
           components: rustfmt, clippy
@@ -77,8 +78,8 @@ jobs:
             test: true
             doc_test: false
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions/checkout@v7
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
       - uses: Swatinem/rust-cache@v2
       - run: cargo check ${{ matrix.features }}
       - if: matrix.test

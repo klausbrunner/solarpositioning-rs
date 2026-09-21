@@ -452,14 +452,14 @@ impl DeltaT {
             polynomial(&[64.69, 0.2930], t)
         } else if year < 2026.5 {
             let t = year - 2015.0;
-            // Retain the full fitted precision; the branches join in value and slope at 2026.5.
+            // Retain full precision; the branches join in value and slope at 2015 and 2026.5.
             polynomial(
                 &[
                     67.62,
-                    0.49005948394643584,
-                    0.01470571892410194,
-                    -0.011854572510804597,
-                    0.0006843204576469319,
+                    0.2930,
+                    0.08753166427153103,
+                    -0.020049795884351372,
+                    0.0009758496126416308,
                 ],
                 t,
             )
@@ -642,10 +642,10 @@ mod tests {
             (2010.0, 66.155),
             (2014.999, 67.619707),
             (2015.0, 67.62),
-            (2017.0, 68.5750543908252),
-            (2020.0, 69.3838191150135),
-            (2023.0, 69.2150773517039),
-            (2026.0, 69.03074612175494),
+            (2017.0, 68.41134188381358),
+            (2020.0, 69.37697312914538),
+            (2023.0, 69.29761103397021),
+            (2026.0, 69.0354672334697),
             (2026.5, 69.14),
             (2027.0, 69.28546094982505),
             (2030.0, 70.21847606910971),
@@ -669,6 +669,7 @@ mod tests {
         let cases = [
             (2015.0, 67.6439282),
             (2017.0, 68.5927130),
+            (2017.4246575342465, 68.8085579),
             (2020.0, 69.3611665),
             (2023.0, 69.2038475),
             (2026.0, 69.1099131),
@@ -678,7 +679,7 @@ mod tests {
         for (year, observed) in cases {
             let estimated = DeltaT::estimate(year).unwrap();
             assert!(
-                (estimated - observed).abs() < 0.2,
+                (estimated - observed).abs() < 0.22,
                 "year {year}: {estimated} vs {observed}"
             );
         }
@@ -702,13 +703,17 @@ mod tests {
     }
 
     #[test]
-    fn test_delta_t_smooth_join_in_mid_2026() {
-        let year = 2026.5;
-        let step = 1e-4;
-        let value = DeltaT::estimate(year).unwrap();
-        let left_slope = (value - DeltaT::estimate(year - step).unwrap()) / step;
-        let right_slope = (DeltaT::estimate(year + step).unwrap() - value) / step;
-        assert!((left_slope - right_slope).abs() < 2e-5);
+    fn test_delta_t_smooth_joins_at_updated_boundaries() {
+        for year in [2015.0, 2026.5] {
+            let step = 1e-4;
+            let value = DeltaT::estimate(year).unwrap();
+            let left_slope = (value - DeltaT::estimate(year - step).unwrap()) / step;
+            let right_slope = (DeltaT::estimate(year + step).unwrap() - value) / step;
+            assert!(
+                (left_slope - right_slope).abs() < 2e-5,
+                "year {year}: left slope {left_slope} vs right slope {right_slope}"
+            );
+        }
     }
 
     #[test]

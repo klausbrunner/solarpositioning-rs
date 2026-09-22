@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [0.6.0] - 2026-09-22
+
 ### Changed
 
 - **BREAKING**: Update the default ΔT estimator from 2015 onwards with the [2026 polynomial adaptation](https://klaus.brunners.name/posts/delta-t-polynomials/). This changes estimated values and solar calculations that use them.

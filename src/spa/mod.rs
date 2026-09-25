@@ -12,7 +12,7 @@
 
 use crate::error::{check_coordinates, check_elevation_angle};
 use crate::math::{
-    acos, asin, atan, atan2, cos, degrees_to_radians, mul_add, normalize_degrees_0_to_360,
+    acos, asin, atan, atan2, cos, degrees_to_radians, floor, mul_add, normalize_degrees_0_to_360,
     polynomial, powi, radians_to_degrees, rem_euclid, sin, sin_cos, tan,
 };
 use crate::time::JulianDate;
@@ -313,7 +313,9 @@ fn calculate_geocentric_sun_coordinates(
 /// Returns times as hours since midnight UTC (0.0 to 24.0+) for the given date.
 /// Hours can extend beyond 24.0 (next day) or be negative (previous day).
 ///
-/// This follows the NREL SPA algorithm (Reda & Andreas 2003, Appendix A.2).
+/// This follows the NREL SPA algorithm (Reda & Andreas 2003, Appendix A.2), except that
+/// A.2.7's independent day wrapping is replaced by event offsets around the transit nearest
+/// mean solar noon. The interpolation and correction equations retain those offsets.
 ///
 /// # Arguments
 /// * `year` - Year (can be negative for BCE)
@@ -452,9 +454,9 @@ pub fn sunrise_sunset_utc_for_horizon(
 /// Returned times are in the same timezone as `date`, but can fall on the previous/next local
 /// calendar date when events occur near midnight (e.g., at timezone boundaries or for twilights).
 /// The internal UTC calculation date is chosen so that transit falls on the requested local date.
-/// For non-UTC offsets, sunrise/sunset are shifted by full days when necessary so they bracket
-/// transit in the expected order. This bracketing is a library convenience and is not specified
-/// by the SPA paper.
+/// Unlike SPA A.2.7, event estimates retain their day offsets relative to transit instead of
+/// wrapping independently into a UTC day. SPA's interpolation and correction equations are
+/// otherwise unchanged; calculated timestamps are not shifted afterwards.
 ///
 /// # Errors
 /// Returns error for invalid coordinates (latitude outside ±90°, longitude outside ±180°) or
@@ -529,7 +531,7 @@ pub fn sunrise_sunset<Tz: TimeZone>(
             Ok((transit_local_date, converted))
         })?;
 
-    Ok(ensure_events_bracket_transit(result))
+    Ok(result)
 }
 
 /// Precompute time-dependent values used by SPA sunrise/sunset calculations for a UTC midnight.
@@ -546,13 +548,15 @@ fn precompute_sunrise_sunset_for_jd_midnight(jd_midnight: JulianDate) -> (f64, [
         epsilon_degrees,
     );
 
-    // A.2.2. Calculate alpha/delta for day before, same day, next day
+    // A.2.2. Sample alpha/delta at 0 TT on D-1, D, D+1, not at 0 UT.
+    // A.2.9 adds delta_t when interpolating these samples to the event time.
+    let jd_tt_midnight = jd_midnight.add_days(-jd_midnight.delta_t() / 86400.0);
     let mut alpha_deltas = [AlphaDelta {
         alpha: 0.0,
         delta: 0.0,
     }; 3];
     for (i, alpha_delta) in alpha_deltas.iter_mut().enumerate() {
-        let current_jd = jd_midnight.add_days((i as f64) - 1.0);
+        let current_jd = jd_tt_midnight.add_days((i as f64) - 1.0);
         let current_jme = current_jd.julian_ephemeris_millennium();
         let current_jce = current_jd.julian_ephemeris_century();
         let current_x_terms = calculate_nutation_terms(current_jce);
@@ -579,8 +583,7 @@ fn calculate_sunrise_sunset_hours_with_precomputed(
     nu_degrees: f64,
     alpha_deltas: [AlphaDelta; 3],
 ) -> crate::SunriseResult<crate::HoursUtc> {
-    let m0 = (alpha_deltas[1].alpha - longitude - nu_degrees) / 360.0;
-    let transit_m = rem_euclid(m0, 1.0);
+    let transit_m = approximate_transit_fraction(longitude, nu_degrees, alpha_deltas[1].alpha);
     let phi = degrees_to_radians(latitude);
     let delta1_rad = degrees_to_radians(alpha_deltas[1].delta);
     let elevation_rad = degrees_to_radians(elevation_angle);
@@ -603,10 +606,11 @@ fn calculate_sunrise_sunset_hours_with_precomputed(
     }
 
     let h0_degrees = radians_to_degrees(acos(acos_arg));
+    // A.2.5-6: retain day offsets instead of wrapping each event in A.2.7.
     let m_values = [
         transit_m,
-        rem_euclid(m0 - h0_degrees / 360.0, 1.0),
-        rem_euclid(m0 + h0_degrees / 360.0, 1.0),
+        transit_m - h0_degrees / 360.0,
+        transit_m + h0_degrees / 360.0,
     ];
 
     let (t_frac, r_frac, s_frac) = calculate_final_time_fractions(
@@ -619,8 +623,6 @@ fn calculate_sunrise_sunset_hours_with_precomputed(
         alpha_deltas,
     );
 
-    let (r_frac, s_frac) = bracket_event_fractions_around_transit(t_frac, r_frac, s_frac);
-
     let transit_hours = crate::HoursUtc::from_hours(t_frac * 24.0);
     let sunrise_hours = crate::HoursUtc::from_hours(r_frac * 24.0);
     let sunset_hours = crate::HoursUtc::from_hours(s_frac * 24.0);
@@ -632,20 +634,13 @@ fn calculate_sunrise_sunset_hours_with_precomputed(
     }
 }
 
-fn bracket_event_fractions_around_transit(
-    transit: f64,
-    mut sunrise: f64,
-    mut sunset: f64,
-) -> (f64, f64) {
-    if sunrise > transit {
-        sunrise -= 1.0;
-    }
-
-    if sunset < transit {
-        sunset += 1.0;
-    }
-
-    (sunrise, sunset)
+// A.2.3, with an explicit solar-day choice instead of A.2.7's UTC-day wrapping.
+// Choose the occurrence nearest mean solar noon so an equation-of-time crossing
+// at midnight cannot move transit to a different solar day.
+fn approximate_transit_fraction(longitude: f64, nu_degrees: f64, alpha: f64) -> f64 {
+    let m0 = (alpha - longitude - nu_degrees) / 360.0;
+    let mean_noon = 0.5 - longitude / 360.0;
+    m0 + floor(mean_noon - m0 + 0.5)
 }
 
 /// Core sunrise/sunset calculation that returns times as fractions of day.
@@ -799,9 +794,9 @@ struct AlphaDelta {
 /// Returned times are in the same timezone as `date`, but can fall on the previous/next local
 /// calendar date when events occur near midnight (e.g., at timezone boundaries or for twilights).
 /// The internal UTC calculation date is chosen so that transit falls on the requested local date.
-/// For non-UTC offsets, sunrise/sunset are shifted by full days when necessary so they bracket
-/// transit in the expected order. This bracketing is a library convenience and is not specified
-/// by the SPA paper.
+/// Unlike SPA A.2.7, event estimates retain their day offsets relative to transit instead of
+/// wrapping independently into a UTC day. SPA's interpolation and correction equations are
+/// otherwise unchanged; calculated timestamps are not shifted afterwards.
 ///
 /// # Errors
 /// Returns error for invalid coordinates, dates, or invalid horizon elevation (for
@@ -907,7 +902,11 @@ where
     };
 
     let (transit_local_date, value) = compute(utc_date)?;
-    debug_assert_eq!(transit_local_date, local_date);
+    if transit_local_date != local_date {
+        return Err(crate::Error::ComputationError {
+            message: "could not select a transit on the requested local date",
+        });
+    }
     Ok((utc_date, value))
 }
 
@@ -928,35 +927,6 @@ fn hours_utc_to_datetime<Tz: TimeZone>(
     let utc_dt = base_utc_midnight + chrono::Duration::milliseconds(millis_plus);
 
     tz.from_utc_datetime(&utc_dt.naive_utc())
-}
-
-#[cfg(feature = "chrono")]
-fn ensure_events_bracket_transit<Tz: TimeZone>(
-    result: crate::SunriseResult<DateTime<Tz>>,
-) -> crate::SunriseResult<DateTime<Tz>> {
-    let crate::SunriseResult::RegularDay {
-        mut sunrise,
-        transit,
-        mut sunset,
-    } = result
-    else {
-        return result;
-    };
-
-    // Keep sunrise before transit and sunset after it even when SPA wraps near midnight UTC.
-    if sunrise > transit {
-        sunrise -= chrono::Duration::days(1);
-    }
-
-    if sunset < transit {
-        sunset += chrono::Duration::days(1);
-    }
-
-    crate::SunriseResult::RegularDay {
-        sunrise,
-        transit,
-        sunset,
-    }
 }
 
 /// Limit to 0..1 if absolute value > 2 (Java limitIfNecessary)
@@ -993,8 +963,9 @@ fn limit_h_prime(h_prime: f64) -> f64 {
 /// Returned times are in the same timezone as `date`, but can fall on the previous/next local
 /// calendar date when events occur near midnight (e.g., at timezone boundaries or for twilights).
 /// The internal UTC calculation date is chosen so that transit falls on the requested local date.
-/// For non-UTC offsets, sunrise is adjusted to precede transit if it would otherwise fall after it.
-/// This bracketing adjustment is a library convenience and is not specified by the SPA paper.
+/// Unlike SPA A.2.7, event estimates retain their day offsets relative to transit instead of
+/// wrapping independently into a UTC day. SPA's interpolation and correction equations are
+/// otherwise unchanged; calculated timestamps are not shifted afterwards.
 ///
 /// # Returns
 /// Iterator over `Result<(Horizon, SunriseResult)>`
@@ -1064,10 +1035,8 @@ where
 
                 let (nu_degrees, alpha_deltas) =
                     precompute_sunrise_sunset_for_jd_midnight(jd_midnight);
-                let transit_m = rem_euclid(
-                    (alpha_deltas[1].alpha - longitude - nu_degrees) / 360.0,
-                    1.0,
-                );
+                let transit_m =
+                    approximate_transit_fraction(longitude, nu_degrees, alpha_deltas[1].alpha);
                 let transit_hours = calculate_transit_hours(
                     transit_m,
                     longitude,
@@ -1096,7 +1065,7 @@ where
             alpha_deltas,
         );
 
-        let result = ensure_events_bracket_transit(match hours_result {
+        let result = match hours_result {
             crate::SunriseResult::RegularDay {
                 sunrise,
                 transit,
@@ -1112,7 +1081,7 @@ where
             crate::SunriseResult::AllNight { transit } => crate::SunriseResult::AllNight {
                 transit: hours_utc_to_datetime(&tz, base_utc_date, transit),
             },
-        });
+        };
 
         Ok((horizon, result))
     })

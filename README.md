@@ -5,7 +5,7 @@
 A Rust library for finding topocentric solar coordinates, i.e. the sun's position on the sky for a given date, latitude, and longitude (and other parameters), as well as times of sunrise, sunset and twilight. Calculations strictly follow well-known, peer-reviewed algorithms: [SPA](http://dx.doi.org/10.1016/j.solener.2003.12.003) by Reda and Andreas and, alternatively, [Grena/ENEA](http://dx.doi.org/10.1016/j.solener.2012.01.024) by Grena. More than 1000 test points are included to validate against the reference code and other sources.
 
 > [!NOTE]
-> This library is **not** based on or derived from code published by NREL, ENEA or other parties. It is an implementation precisely following the algorithms described in the respective papers.
+> This library is **not** based on or derived from code published by NREL, ENEA or other parties. It implements the algorithms described in the respective papers, with minimal adjustments documented below.
 
 ## Status
 
@@ -91,9 +91,10 @@ match result {
 Returned event timestamps are in the same timezone as the input `DateTime`, but can fall on the
 previous/next local calendar date when events occur near midnight (e.g., at timezone boundaries or
 for twilights).
-The UTC calculation day is chosen so that transit lands on the requested local date; sunrise/sunset
-may shift by +/-1 day to keep the expected sunrise–transit–sunset order. This bracketing adjustment
-is a library convenience and is not specified by the SPA paper.
+The calculation day is chosen so that transit lands on the requested local date. Unlike SPA
+A.2.7, sunrise and sunset estimates retain their day offsets around that transit instead of
+wrapping independently into a UTC day. This avoids using the wrong day's solar coordinates
+near midnight; SPA's interpolation and correction equations are otherwise unchanged.
 
 For twilight, use `Horizon::CivilTwilight`, `Horizon::NauticalTwilight`, or `Horizon::AstronomicalTwilight`.
 
@@ -118,18 +119,14 @@ Both are fast in absolute terms. The ~10× speed difference only matters for bul
 
 ### Sunrise/sunset accuracy notes
 
-- Uses standard 0.833° correction (solar disc 50 arc-minutes below horizon). Atmospheric refraction varies, so calculated times may differ from observed by several minutes ([Wilson 2018](https://doi.org/10.37099/mtu.dc.etdr/697)).
-- Jean Meeus advises giving times "more accurately than to the nearest minute makes no sense". Errors increase toward poles.
-- Results match the [NOAA calculator](http://www.esrl.noaa.gov/gmd/grad/solcalc/) closely.
+- Sunrise and sunset use the standard solar-centre elevation of −0.833° (50 arcminutes below the geometric horizon), accounting for average atmospheric refraction and the Sun's apparent radius.
+- Atmospheric variability limits the accuracy of predicted observed sunrise/sunset times: differences of a minute or more are possible, especially where the Sun crosses the horizon at a shallow angle ([USNO](https://aa.usno.navy.mil/faq/RST_defs)).
+- SPA's sunrise/sunset and twilight calculations become less reliable near seasonal transitions where the Sun barely crosses the selected horizon.
+- Days with only a rising or setting event are not reliably supported by SPA.
 
-#### Divergence from the NREL SPA reference code
+#### Difference in SPA day wrapping
 
-The library follows the procedure in the SPA paper: sidereal time is evaluated at 0 **UT** (A.2.1)
-while the geocentric α/δ for sunrise/sunset interpolation are evaluated at 0 **TT** for D−1/D/D+1 (A.2.2). The NREL
-reference code (`spa.c`) resets ΔT to zero when building those intermediate ephemerides, effectively keeping
-them in UT. This Rust code preserves the supplied ΔT to stay faithful to the published algorithm rather than
-the C code. As a consequence, sunrise/sunset times differ slightly from `spa.c` but should line up better with
-high-precision ephemerides (JPL Horizons, USNO almanacs, etc.).
+Unlike SPA Appendix A.2.7, this library retains sunrise and sunset estimates’ day offsets around the selected transit instead of wrapping them independently into [0, 1). This avoids using the wrong day’s solar coordinates.
 
 ### Delta T
 

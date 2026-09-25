@@ -5,7 +5,7 @@ use solar_positioning::{spa, time::DeltaT, Horizon, SunriseResult};
 
 // When sunrise/sunset events occur near local midnight, a naive UTC-day mapping can
 // skip/duplicate events. The chrono API picks the internal UTC day so that transit lands on the
-// requested local calendar date, and corrects sunrise when it ends up after transit.
+// requested local calendar date, retaining event day offsets throughout the calculation.
 #[test]
 fn sunrise_near_local_midnight_is_not_skipped() {
     let latitude = 49.60139790853522;
@@ -146,4 +146,59 @@ fn sunrise_stays_on_local_date_for_plus_five_offset() {
     );
     assert!(sunrise < transit, "sunrise={sunrise} transit={transit}");
     assert!(transit < sunset, "transit={transit} sunset={sunset}");
+}
+
+#[test]
+fn transit_stays_on_requested_day_across_antimeridian() {
+    // Around the equation-of-time zero, wrapped transit jumps between UTC days.
+    for (longitude, offset) in [(-180.0, "-12:00"), (180.0, "+12:00")] {
+        for day in 12..=18 {
+            let date = format!("2024-04-{day:02}T00:00:00{offset}")
+                .parse::<DateTime<FixedOffset>>()
+                .unwrap();
+            for latitude in [-60.0, 0.0, 60.0] {
+                for (horizon, result) in spa::sunrise_sunset_multiple(
+                    date,
+                    latitude,
+                    longitude,
+                    69.184,
+                    [Horizon::SunriseSunset, Horizon::CivilTwilight],
+                )
+                .map(Result::unwrap)
+                {
+                    assert_eq!(result.transit().date_naive(), date.date_naive());
+                    assert_eq!(result, spa::sunrise_sunset_for_horizon(
+                        date, latitude, longitude, 69.184, horizon,
+                    ).unwrap());
+                    let SunriseResult::RegularDay {
+                        sunrise,
+                        transit,
+                        sunset,
+                    } = result
+                    else {
+                        panic!("expected regular day");
+                    };
+                    assert!(sunrise < transit && transit < sunset);
+                    assert!((transit - sunrise).num_hours() < 24);
+                    assert!((sunset - transit).num_hours() < 24);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn sunset_uses_its_actual_day_across_utc_midnight() {
+    // Skyfield 1.55 / JPL DE440s: sea level, delta_t=69.184s,
+    // geometric solar-centre horizon -0.83337 degrees. Previously 9m16s late.
+    let date = "2024-03-20T00:00:00-08:00"
+        .parse::<DateTime<FixedOffset>>()
+        .unwrap();
+    let expected = "2024-03-21T02:17:36Z"
+        .parse::<DateTime<FixedOffset>>()
+        .unwrap();
+    let result =
+        spa::sunrise_sunset_for_horizon(date, -80.0, -120.0, 69.184, Horizon::SunriseSunset)
+            .unwrap();
+    assert!((*result.sunset().unwrap() - expected).num_seconds().abs() < 5);
 }

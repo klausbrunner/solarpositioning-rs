@@ -2,6 +2,8 @@
 
 #![cfg(all(feature = "chrono", feature = "std"))]
 
+mod common;
+
 use chrono::{DateTime, NaiveTime, Timelike, Utc};
 use csv::ReaderBuilder;
 use solar_positioning::{spa, SunriseResult};
@@ -33,7 +35,7 @@ fn sunrise_sunset_matches_spa_reference_data() -> Result<(), Box<dyn Error>> {
         let latitude = record[1].parse()?;
         let longitude = record[2].parse()?;
 
-        match spa::sunrise_sunset(datetime, latitude, longitude, 0.0, -0.833)? {
+        match common::events_on_utc_date(datetime, latitude, longitude, -0.833)? {
             SunriseResult::RegularDay {
                 sunrise,
                 transit,

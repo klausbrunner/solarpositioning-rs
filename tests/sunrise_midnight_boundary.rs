@@ -1,11 +1,11 @@
 #![cfg(feature = "chrono")]
 
-use chrono::{DateTime, FixedOffset, NaiveDate};
+use chrono::{DateTime, Duration, FixedOffset, NaiveDate, TimeZone};
 use solar_positioning::{spa, time::DeltaT, Horizon, SunriseResult};
 
 // When sunrise/sunset events occur near local midnight, a naive UTC-day mapping can
-// skip/duplicate events. The chrono API picks the internal UTC day so that transit lands on the
-// requested local calendar date, retaining event day offsets throughout the calculation.
+// skip/duplicate events. The chrono API selects a transit near local noon, retaining
+// event day offsets throughout the calculation.
 #[test]
 fn sunrise_near_local_midnight_is_not_skipped() {
     let latitude = 49.60139790853522;
@@ -201,4 +201,92 @@ fn sunset_uses_its_actual_day_across_utc_midnight() {
         spa::sunrise_sunset_for_horizon(date, -80.0, -120.0, 69.184, Horizon::SunriseSunset)
             .unwrap();
     assert!((*result.sunset().unwrap() - expected).num_seconds().abs() < 5);
+}
+
+// Eight civil dates without a transit, then two with two transits. The expected
+// SPA candidate nearest local noon defines the cycle, not an event shifted by 24h.
+#[test]
+fn transit_selection_handles_missing_and_double_transits() {
+    for (date, longitude, expected) in [
+        ("2020-06-10", 179.9, "2020-06-11T00:00:03.291Z"),
+        ("2020-12-24", 179.9, "2020-12-23T23:59:56.717Z"),
+        ("2020-06-14", -179.9, "2020-06-15T00:00:05.462Z"),
+        ("2020-12-25", -179.9, "2020-12-26T00:00:08.100Z"),
+        ("2025-06-10", 179.9, "2025-06-11T00:00:00.776Z"),
+        ("2025-12-24", 179.9, "2025-12-23T23:59:49.820Z"),
+        ("2025-06-14", -179.9, "2025-06-15T00:00:02.694Z"),
+        ("2025-12-25", -179.9, "2025-12-26T00:00:01.383Z"),
+        ("2020-04-16", 179.9, "2020-04-16T00:00:12.776Z"),
+        ("2020-09-02", 179.9, "2020-09-02T23:59:45.609Z"),
+    ] {
+        let day = format!("{date}T00:00:00Z")
+            .parse::<DateTime<FixedOffset>>()
+            .unwrap();
+        let expected = expected.parse::<DateTime<FixedOffset>>().unwrap();
+        for offset in -1..=1 {
+            let query = day + Duration::days(offset);
+            let delta_t = DeltaT::estimate_from_date_like(query).unwrap();
+            for (horizon, result) in spa::sunrise_sunset_multiple(
+                query,
+                0.0,
+                longitude,
+                delta_t,
+                [Horizon::SunriseSunset, Horizon::CivilTwilight],
+            )
+            .map(Result::unwrap)
+            {
+                if offset == 0 {
+                    assert!(
+                        (*result.transit() - expected).num_milliseconds().abs() <= 1,
+                        "{query}, {longitude}: {:?}",
+                        result.transit()
+                    );
+                } else {
+                    assert_eq!(result.transit().date_naive(), query.date_naive());
+                }
+                assert_eq!(
+                    result,
+                    spa::sunrise_sunset_for_horizon(query, 0.0, longitude, delta_t, horizon)
+                        .unwrap()
+                );
+                let SunriseResult::RegularDay {
+                    sunrise,
+                    transit,
+                    sunset,
+                } = result
+                else {
+                    panic!("expected regular solar cycle");
+                };
+                assert!(sunrise < transit && transit < sunset);
+            }
+        }
+    }
+}
+
+#[test]
+fn transit_selection_uses_local_clock_across_dst() {
+    for (month, day, offset) in [(3, 31, 7200), (10, 27, 3600)] {
+        let query = chrono_tz::Europe::Berlin
+            .with_ymd_and_hms(2024, month, day, 0, 0, 0)
+            .unwrap();
+        let result =
+            spa::sunrise_sunset_for_horizon(query, 52.0, 13.4, 69.184, Horizon::SunriseSunset)
+                .unwrap();
+        assert_eq!(result.transit().date_naive(), query.date_naive());
+        assert_eq!(
+            result.transit().fixed_offset().offset().local_minus_utc(),
+            offset
+        );
+        assert_eq!(
+            result,
+            spa::sunrise_sunset_for_horizon(
+                query + Duration::hours(12),
+                52.0,
+                13.4,
+                69.184,
+                Horizon::SunriseSunset
+            )
+            .unwrap()
+        );
+    }
 }

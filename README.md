@@ -91,10 +91,9 @@ match result {
 Returned event timestamps are in the same timezone as the input `DateTime`, but can fall on the
 previous/next local calendar date when events occur near midnight (e.g., at timezone boundaries or
 for twilights).
-The calculation day is chosen so that transit lands on the requested local date. Unlike SPA
-A.2.7, sunrise and sunset estimates retain their day offsets around that transit instead of
-wrapping independently into a UTC day. This avoids using the wrong day's solar coordinates
-near midnight; SPA's interpolation and correction equations are otherwise unchanged.
+The chrono API selects the transit closest to 12:00 on the requested date's local clock
+(earlier on a tie). Transit can fall on an adjacent date; the result describes one solar cycle,
+not all events in a civil day.
 
 For twilight, use `Horizon::CivilTwilight`, `Horizon::NauticalTwilight`, or `Horizon::AstronomicalTwilight`.
 
@@ -126,7 +125,7 @@ Both are fast in absolute terms. The ~10× speed difference only matters for bul
 
 #### Difference in SPA day wrapping
 
-Unlike SPA Appendix A.2.7, this library retains sunrise and sunset estimates’ day offsets around the selected transit instead of wrapping them independently into [0, 1). This avoids using the wrong day’s solar coordinates.
+Unlike SPA Appendix A.2.7, this library retains sunrise and sunset estimates’ day offsets around the selected transit instead of wrapping them independently into [0, 1). This avoids using the wrong day’s solar coordinates. SPA’s interpolation and correction equations are unchanged.
 
 ### Delta T
 

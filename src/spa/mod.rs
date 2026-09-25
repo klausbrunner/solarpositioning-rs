@@ -498,39 +498,37 @@ pub fn sunrise_sunset<Tz: TimeZone>(
     let local_date = date.date_naive();
     // SPA sunrise/sunset (Appendix A.2) is defined relative to 0 UT (midnight UTC) of a UTC date.
     // Select the solar cycle by its transit, keeping all event day offsets intact.
-    let base_utc_date_guess = local_date;
-    let (_base_utc_date, result) =
-        select_utc_date_by_transit(local_date, base_utc_date_guess, |d| {
-            let converted = match sunrise_sunset_utc(
-                d.year(),
-                d.month(),
-                d.day(),
-                latitude,
-                longitude,
-                delta_t,
-                elevation_angle,
-            )? {
-                crate::SunriseResult::RegularDay {
-                    sunrise,
-                    transit,
-                    sunset,
-                } => crate::SunriseResult::RegularDay {
-                    sunrise: hours_utc_to_datetime(&tz, d, sunrise),
-                    transit: hours_utc_to_datetime(&tz, d, transit),
-                    sunset: hours_utc_to_datetime(&tz, d, sunset),
-                },
-                crate::SunriseResult::AllDay { transit } => crate::SunriseResult::AllDay {
-                    transit: hours_utc_to_datetime(&tz, d, transit),
-                },
-                crate::SunriseResult::AllNight { transit } => crate::SunriseResult::AllNight {
-                    transit: hours_utc_to_datetime(&tz, d, transit),
-                },
-            };
+    let (_base_utc_date, result) = select_utc_date_by_transit(local_date, |d| {
+        let converted = match sunrise_sunset_utc(
+            d.year(),
+            d.month(),
+            d.day(),
+            latitude,
+            longitude,
+            delta_t,
+            elevation_angle,
+        )? {
+            crate::SunriseResult::RegularDay {
+                sunrise,
+                transit,
+                sunset,
+            } => crate::SunriseResult::RegularDay {
+                sunrise: hours_utc_to_datetime(&tz, d, sunrise),
+                transit: hours_utc_to_datetime(&tz, d, transit),
+                sunset: hours_utc_to_datetime(&tz, d, sunset),
+            },
+            crate::SunriseResult::AllDay { transit } => crate::SunriseResult::AllDay {
+                transit: hours_utc_to_datetime(&tz, d, transit),
+            },
+            crate::SunriseResult::AllNight { transit } => crate::SunriseResult::AllNight {
+                transit: hours_utc_to_datetime(&tz, d, transit),
+            },
+        };
 
-            let transit_local_time = converted.transit().naive_local();
+        let transit_local_time = converted.transit().naive_local();
 
-            Ok((transit_local_time, converted))
-        })?;
+        Ok((transit_local_time, converted))
+    })?;
 
     Ok(result)
 }
@@ -885,44 +883,33 @@ fn calculate_alpha_delta(jme: f64, delta_psi: f64, epsilon_degrees: f64) -> Alph
 }
 
 #[cfg(feature = "chrono")]
-fn select_utc_date_by_transit<V, F>(
-    local_date: NaiveDate,
-    mut utc_date: NaiveDate,
-    mut compute: F,
-) -> Result<(NaiveDate, V)>
+fn select_utc_date_by_transit<V, F>(local_date: NaiveDate, mut compute: F) -> Result<(NaiveDate, V)>
 where
     F: FnMut(NaiveDate) -> Result<(NaiveDateTime, V)>,
 {
-    // Compare local clock times, so noon need not exist as a timezone instant.
-    // Selecting the closest transit normally requires computing two solar cycles.
+    // Local clock time can run backwards, so compare candidates without assuming order.
+    // +/-2 UTC dates covers midnight transits and timezone offsets approaching 24 hours.
     let noon = local_date.and_hms_opt(12, 0, 0).unwrap();
-    let (mut transit, mut value) = compute(utc_date)?;
-    let forward = transit < noon;
-    while transit != noon {
-        let next_date = if forward {
-            utc_date.succ_opt()
-        } else {
-            utc_date.pred_opt()
+    let (transit, mut value) = compute(local_date)?;
+    let mut best = ((transit - noon).abs(), local_date);
+    for offset in [-2, -1, 1, 2] {
+        let Some(date) = local_date.checked_add_signed(chrono::Duration::days(offset)) else {
+            continue;
+        };
+        // An invalid neighbouring calendar date must not invalidate the requested date.
+        if crate::time::validate_utc_components(date.year(), date.month(), date.day(), 0, 0, 0.0)
+            .is_err()
+        {
+            continue;
         }
-        .ok_or(crate::Error::InvalidDateTime {
-            message: "no adjacent date for transit selection",
-        })?;
-        let (next_transit, next_value) = compute(next_date)?;
-        if (next_transit < noon) != forward {
-            // The two transits bracket noon; choose the closer, then the earlier.
-            return if ((next_transit - noon).abs(), next_transit)
-                < ((transit - noon).abs(), transit)
-            {
-                Ok((next_date, next_value))
-            } else {
-                Ok((utc_date, value))
-            };
+        let (transit, candidate) = compute(date)?;
+        let key = ((transit - noon).abs(), date);
+        if key < best {
+            best = key;
+            value = candidate;
         }
-        utc_date = next_date;
-        transit = next_transit;
-        value = next_value;
     }
-    Ok((utc_date, value))
+    Ok((best.1, value))
 }
 
 #[cfg(feature = "chrono")]
@@ -1039,13 +1026,12 @@ where
     let local_date = date.date_naive();
     // SPA sunrise/sunset (Appendix A.2) is defined relative to 0 UT (midnight UTC) of a UTC date.
     // Select the solar cycle by its transit, keeping all event day offsets intact.
-    let base_utc_date_guess = local_date;
 
     // Pre-calculate common values once for efficiency.
     let precomputed = (|| -> Result<_> {
         check_coordinates(latitude, longitude)?;
         let (base_utc_date, (nu_degrees, alpha_deltas)) =
-            select_utc_date_by_transit(local_date, base_utc_date_guess, |d| {
+            select_utc_date_by_transit(local_date, |d| {
                 let jd_midnight =
                     JulianDate::from_utc(d.year(), d.month(), d.day(), 0, 0, 0.0, delta_t)?;
 
@@ -1349,14 +1335,11 @@ mod tests {
     #[test]
     fn transit_selection_breaks_ties_toward_the_earlier_cycle() {
         let date = NaiveDate::from_ymd_opt(2024, 1, 2).unwrap();
-        // Midnight transits are equally far from noon. Check both search directions.
-        for initial in [date, date.succ_opt().unwrap()] {
-            let (selected, ()) = select_utc_date_by_transit(date, initial, |d| {
-                Ok((d.and_hms_opt(0, 0, 0).unwrap(), ()))
-            })
-            .unwrap();
-            assert_eq!(selected, date);
-        }
+        // Identical clock times on a repeated date must select the earlier UTC cycle.
+        let (selected, ()) =
+            select_utc_date_by_transit(date, |_| Ok((date.and_hms_opt(12, 0, 0).unwrap(), ())))
+                .unwrap();
+        assert_eq!(selected, date - chrono::Duration::days(2));
     }
 
     fn angular_distance(a: f64, b: f64) -> f64 {

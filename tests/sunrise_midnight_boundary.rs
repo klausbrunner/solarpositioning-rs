@@ -290,3 +290,49 @@ fn transit_selection_uses_local_clock_across_dst() {
         );
     }
 }
+
+#[test]
+fn transit_selection_handles_clock_rollbacks_and_calendar_gaps() {
+    use chrono_tz::{America::Adak, UTC};
+    for (date, zone, longitude, expected) in [
+        ("1867-10-18", Adak, 0.0, "1867-10-19T11:45:05.512Z"),
+        ("1867-10-19", Adak, -176.64, "1867-10-18T23:31:44.755Z"),
+        ("1582-10-04", UTC, 0.0, "1582-10-04T11:46:11.877Z"),
+        ("1582-10-15", UTC, -180.0, "1582-10-15T23:45:52.632Z"),
+    ] {
+        let local = date
+            .parse::<NaiveDate>()
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap();
+        let query = zone.from_local_datetime(&local).earliest().unwrap();
+        let expected = expected.parse::<DateTime<FixedOffset>>().unwrap();
+        for (horizon, result) in spa::sunrise_sunset_multiple(
+            query,
+            0.0,
+            longitude,
+            69.184,
+            [Horizon::SunriseSunset, Horizon::CivilTwilight],
+        )
+        .map(Result::unwrap)
+        {
+            assert!(
+                (result.transit().timestamp_millis() - expected.timestamp_millis()).abs() <= 1,
+                "{date}, {zone}, {longitude}: {:?}",
+                result.transit()
+            );
+            assert_eq!(
+                result,
+                spa::sunrise_sunset_for_horizon(query, 0.0, longitude, 69.184, horizon).unwrap()
+            );
+        }
+    }
+    // Skipping invalid neighbours must not accept an invalid requested date.
+    let invalid = "1582-10-10T12:00:00Z"
+        .parse::<DateTime<FixedOffset>>()
+        .unwrap();
+    assert!(matches!(
+        spa::sunrise_sunset_for_horizon(invalid, 0.0, 0.0, 69.184, Horizon::SunriseSunset),
+        Err(solar_positioning::Error::InvalidDateTime { .. })
+    ));
+}

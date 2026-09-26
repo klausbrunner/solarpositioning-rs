@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [0.7.0] - 2026-09-26
+
 ### Changed
 
 - **BREAKING**: Replace position and sunrise/sunset APIs with `SolarPositions`, `PreparedPositions`, `SolarEvents` and `Events<T>`. Public types are exported at the crate root.

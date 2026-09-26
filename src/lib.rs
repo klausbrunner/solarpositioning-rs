@@ -9,138 +9,109 @@
 //! - **SPA** (Solar Position Algorithm): NREL's authoritative algorithm (±0.0003°, years -2000 to 6000)
 //! - **Grena3**: Simplified algorithm (±0.01°, years 2010-2110, ~10x faster)
 //!
-//! In addition, [`time::DeltaT`] estimates Delta T (ΔT) based on the work of F. Espenak & J. Meeus,
+//! In addition, [`delta_t`] estimates Delta T (ΔT) based on the work of F. Espenak & J. Meeus,
 //! with updated fits from 2015 onwards.
 //!
 //! ## Features
 //!
 //! - Multiple configurations: `std` or `no_std`, with or without `chrono`, math via native or `libm`
 //! - Maximum accuracy: Authentic NREL SPA implementation, validated against reference data
-//! - Performance optimized: Split functions for bulk calculations (SPA only)
+//! - Prepared calculations for many locations at one time, for both models
 //! - Thread-safe: Stateless, immutable data structures
 //!
 //! ## Feature Flags
 //!
-//! - `std` (default): Use standard library for native math functions (usually faster than `libm`)
+//! - `std` (default): Native math functions and `alloc`
+//! - `alloc` (enabled by `std`): Collect event lists, also available with `no_std`
 //! - `chrono` (default): Enable `DateTime<Tz>` based convenience API
 //! - `libm`: Use pure Rust math for `no_std` environments
 //!
 //! **Configuration examples:**
 //! ```toml
 //! # Default: std + chrono (most convenient)
-//! solar-positioning = "0.5"
+//! solar-positioning = "0.7"
 //!
 //! # Minimal std (no chrono, smallest dependency tree)
-//! solar-positioning = { version = "0.5", default-features = false, features = ["std"] }
+//! solar-positioning = { version = "0.7", default-features = false, features = ["std"] }
 //!
 //! # no_std + chrono (embedded with DateTime support)
-//! solar-positioning = { version = "0.5", default-features = false, features = ["libm", "chrono"] }
+//! solar-positioning = { version = "0.7", default-features = false, features = ["libm", "chrono"] }
 //!
 //! # Minimal no_std (pure numeric API)
-//! solar-positioning = { version = "0.5", default-features = false, features = ["libm"] }
+//! solar-positioning = { version = "0.7", default-features = false, features = ["libm"] }
 //! ```
 //!
 //! ## References
 //!
 //! - Reda, I.; Andreas, A. (2003). Solar position algorithm for solar radiation applications.
-//!   Solar Energy, 76(5), 577-589. DOI: <http://dx.doi.org/10.1016/j.solener.2003.12.003>
+//!   Solar Energy, 76(5), 577-589. DOI: <https://doi.org/10.1016/j.solener.2003.12.003>
 //! - Grena, R. (2012). Five new algorithms for the computation of sun position from 2010 to 2110.
-//!   Solar Energy, 86(5), 1323-1337. DOI: <http://dx.doi.org/10.1016/j.solener.2012.01.024>
+//!   Solar Energy, 86(5), 1323-1337. DOI: <https://doi.org/10.1016/j.solener.2012.01.024>
 //!
 //! ## Quick Start
 //!
-//! ### Solar Position (with chrono)
+//! ### Solar positions
 //! ```rust
 //! # #[cfg(feature = "chrono")] {
-//! use solar_positioning::{spa, RefractionCorrection, time::DeltaT};
-//! use chrono::{DateTime, FixedOffset};
+//! use chrono::{DateTime, Utc};
+//! use solar_positioning::{Location, RefractionCorrection, SolarPositions};
 //!
-//! // Calculate sun position for Vienna at noon
-//! let datetime = "2026-06-21T12:00:00+02:00".parse::<DateTime<FixedOffset>>().unwrap();
-//! let position = spa::solar_position(
-//!     datetime,
-//!     48.21,   // Vienna latitude
-//!     16.37,   // Vienna longitude
-//!     190.0,   // elevation (meters)
-//!     DeltaT::estimate_from_date_like(datetime).unwrap(), // delta T
-//!     Some(RefractionCorrection::standard())
-//! ).unwrap();
-//!
-//! println!("Azimuth: {:.3}°", position.azimuth());
+//! let time = "2026-06-21T12:00:00Z".parse::<DateTime<Utc>>().unwrap();
+//! let location = Location { latitude: 48.21, longitude: 16.37 };
+//! let positions = SolarPositions::new();
+//! let position = positions.at(
+//!     &time, location, 190.0, 69.0, Some(RefractionCorrection::standard()),
+//! )?;
 //! println!("Elevation: {:.3}°", position.elevation_angle());
+//!
+//! // Reuse the time-dependent calculations across locations.
+//! let prepared = positions.for_time(&time, 69.0)?;
+//! let unrefracted = prepared.at(location, 0.0, None)?;
+//! # }
+//! # Ok::<(), solar_positioning::Error>(())
+//! ```
+//!
+//! `SolarPositions::grena3()` selects Grena3. Height is in metres (zero is required
+//! for Grena3), delta T is in seconds, and `None` omits refraction. The prepared
+//! value owns its cached data and needs no allocation.
+//!
+//! ### Positions without chrono
+//! ```rust
+//! use solar_positioning::{time::JulianDate, Location, SolarPositions};
+//!
+//! let time = JulianDate::from_utc(2026, 6, 21, 12, 0, 0.0, 69.0)?;
+//! let location = Location { latitude: 48.21, longitude: 16.37 };
+//! let positions = SolarPositions::new();
+//! let position = positions.at_from_julian(time, location, 190.0, None)?;
+//! let prepared = positions.for_time_from_julian(time);
+//! assert_eq!(position, prepared.at(location, 190.0, None)?);
+//! # Ok::<(), solar_positioning::Error>(())
+//! ```
+//!
+//! ### Solar events
+//! ```rust
+//! # #[cfg(all(feature = "chrono", feature = "alloc"))] {
+//! use chrono::{NaiveDate, Utc};
+//! use solar_positioning::{SolarEvents, Horizon, Location};
+//!
+//! let location = Location { latitude: 78.216667, longitude: 15.633333 };
+//! let day = SolarEvents::new().for_date(
+//!     NaiveDate::from_ymd_opt(2020, 4, 16).unwrap(), &Utc,
+//!     location, 69.184, Horizon::SunriseSunset,
+//! ).unwrap();
+//! assert_eq!(day.rises.len(), 2); // A date need not contain just one solar cycle.
 //! # }
 //! ```
 //!
-//! ### Solar Position (numeric API, no chrono)
+//! Without chrono or allocation, use continuous UT Julian dates:
 //! ```rust
-//! use solar_positioning::{spa, time::JulianDate, RefractionCorrection};
+//! use solar_positioning::{SolarEvents, Horizon, Location};
 //!
-//! // Create Julian date from UTC components (2026-06-21 12:00:00 UTC + 69s ΔT)
-//! let jd = JulianDate::from_utc(2026, 6, 21, 12, 0, 0.0, 69.0).unwrap();
-//!
-//! // Calculate sun position (works in both std and no_std)
-//! let position = spa::solar_position_from_julian(
-//!     jd,
-//!     48.21,   // Vienna latitude
-//!     16.37,   // Vienna longitude
-//!     190.0,   // elevation (meters)
-//!     Some(RefractionCorrection::standard())
+//! let location = Location { latitude: 48.21, longitude: 16.37 };
+//! let rise = SolarEvents::new().next_rise_from_julian(
+//!     2_460_389.5, 2_460_390.5, location, 69.184, Horizon::SunriseSunset,
 //! ).unwrap();
-//!
-//! println!("Azimuth: {:.3}°", position.azimuth());
-//! println!("Elevation: {:.3}°", position.elevation_angle());
-//! ```
-//!
-//! ### Sunrise and Sunset (with chrono)
-//! ```rust
-//! # #[cfg(feature = "chrono")] {
-//! use solar_positioning::{spa, Horizon, time::DeltaT};
-//! use chrono::{DateTime, FixedOffset};
-//!
-//! // Calculate sunrise/sunset for San Francisco
-//! let date = "2026-06-21T00:00:00-07:00".parse::<DateTime<FixedOffset>>().unwrap();
-//! // Note: returned timestamps are in the same timezone as `date`, but can fall on the
-//! // previous/next local calendar date when events occur near midnight.
-//! let result = spa::sunrise_sunset_for_horizon(
-//!     date,
-//!     37.7749,  // San Francisco latitude
-//!     -122.4194, // San Francisco longitude
-//!     DeltaT::estimate_from_date_like(date).unwrap(),
-//!     Horizon::SunriseSunset
-//! ).unwrap();
-//!
-//! match result {
-//!     solar_positioning::SunriseResult::RegularDay { sunrise, transit, sunset } => {
-//!         println!("Sunrise: {}", sunrise);
-//!         println!("Solar noon: {}", transit);
-//!         println!("Sunset: {}", sunset);
-//!     }
-//!     _ => println!("No sunrise/sunset (polar day/night)"),
-//! }
-//! # }
-//! ```
-//!
-//! ### Sunrise and Sunset (numeric API, no chrono)
-//! ```rust
-//! use solar_positioning::{spa, Horizon};
-//!
-//! // Calculate sunrise/sunset for San Francisco (returns hours since midnight UTC)
-//! let result = spa::sunrise_sunset_utc_for_horizon(
-//!     2026, 6, 21,  // June 21, 2026
-//!     37.7749,      // San Francisco latitude
-//!     -122.4194,    // San Francisco longitude
-//!     69.0,         // ΔT (seconds)
-//!     Horizon::SunriseSunset
-//! ).unwrap();
-//!
-//! match result {
-//!     solar_positioning::SunriseResult::RegularDay { sunrise, transit, sunset } => {
-//!         println!("Sunrise: {:.2} hours UTC", sunrise.hours());
-//!         println!("Solar noon: {:.2} hours UTC", transit.hours());
-//!         println!("Sunset: {:.2} hours UTC", sunset.hours());
-//!     }
-//!     _ => println!("No sunrise/sunset (polar day/night)"),
-//! }
+//! assert!(rise.is_some());
 //! ```
 //!
 //! ## Algorithms
@@ -172,89 +143,30 @@
     clippy::cargo_common_metadata,
     clippy::multiple_crate_versions, // Acceptable for dev-dependencies
     clippy::float_cmp, // Exact comparisons of mathematical constants in tests
-    clippy::incompatible_msrv, // Functions work fine in 1.70, const context only needs 1.85+
 )]
 
 // Public API exports - core types only
 pub use crate::error::{Error, Result};
-pub use crate::types::{Horizon, HoursUtc, RefractionCorrection, SolarPosition, SunriseResult};
+#[cfg(feature = "alloc")]
+pub use crate::events::Events;
+pub use crate::events::{EventPosition, HorizonState, SolarEvents};
+pub use crate::positions::{PreparedPositions, SolarPositions};
+pub use crate::types::{Horizon, Location, RefractionCorrection, SolarPosition};
+
+#[cfg(feature = "alloc")]
+extern crate alloc;
 
 // Algorithm modules
-pub mod grena3;
-pub mod spa;
+pub mod events;
+mod grena3;
+mod spa;
 
 // Supporting modules
-pub mod error;
+pub mod delta_t;
+mod error;
 pub mod time;
-pub mod types;
+mod types;
 
 // Internal modules
 mod math;
-
-#[cfg(all(test, feature = "chrono"))]
-mod tests {
-    use super::*;
-    use chrono::{DateTime, FixedOffset, TimeZone, Utc};
-
-    #[test]
-    fn test_basic_spa_calculation() {
-        // Test with different timezone types
-        let datetime_fixed = "2023-06-21T12:00:00-07:00"
-            .parse::<DateTime<FixedOffset>>()
-            .unwrap();
-        let datetime_utc = Utc.with_ymd_and_hms(2023, 6, 21, 19, 0, 0).unwrap();
-
-        let position1 = spa::solar_position(
-            datetime_fixed,
-            37.7749,
-            -122.4194,
-            0.0,
-            69.0,
-            Some(RefractionCorrection::standard()),
-        )
-        .unwrap();
-        let position2 = spa::solar_position(
-            datetime_utc,
-            37.7749,
-            -122.4194,
-            0.0,
-            69.0,
-            Some(RefractionCorrection::standard()),
-        )
-        .unwrap();
-
-        assert!((position1.azimuth() - position2.azimuth()).abs() < 1e-10);
-        assert!((position1.zenith_angle() - position2.zenith_angle()).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_basic_grena3_calculation() {
-        use chrono::{DateTime, FixedOffset, TimeZone, Utc};
-
-        let datetime_fixed = "2023-06-21T12:00:00-07:00"
-            .parse::<DateTime<FixedOffset>>()
-            .unwrap();
-        let datetime_utc = Utc.with_ymd_and_hms(2023, 6, 21, 19, 0, 0).unwrap();
-
-        let position1 = grena3::solar_position(
-            datetime_fixed,
-            37.7749,
-            -122.4194,
-            69.0,
-            Some(RefractionCorrection::new(1013.25, 15.0).unwrap()),
-        )
-        .unwrap();
-
-        let position2 = grena3::solar_position(
-            datetime_utc,
-            37.7749,
-            -122.4194,
-            69.0,
-            Some(RefractionCorrection::new(1013.25, 15.0).unwrap()),
-        )
-        .unwrap();
-
-        assert!((position1.azimuth() - position2.azimuth()).abs() < 1e-6);
-        assert!((position1.zenith_angle() - position2.zenith_angle()).abs() < 1e-6);
-    }
-}
+mod positions;

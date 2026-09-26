@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Changed
+
+- **BREAKING**: Replace position and sunrise/sunset APIs with `SolarPositions`, `PreparedPositions`, `SolarEvents` and `Events<T>`. Public types are exported at the crate root.
+- Events use precise SPA, Grena3 or custom positions and support missing or multiple events per day. The standard sunrise horizon is −50/60°.
+- **BREAKING**: Replace `time::DeltaT` with `delta_t` functions. Make `Error` non-exhaustive, with `core::error::Error` support also without `std`.
+- **BREAKING**: Use the proleptic Gregorian calendar throughout; Grena3 requires zero observer height.
+- **BREAKING**: Move to Rust edition 2024 (MSRV 1.85).
+- Add `alloc` for event lists; numeric positions and bounded searches work without allocation or chrono.
+
+### Fixed
+
+- Remove Grena3's rounded-hours artifact by using continuous Julian time.
+- Prevent SPA roundoff errors at zenith and nadir.
+- Reject refraction temperatures at or below −273°C.
+
 ## [0.6.1] - 2026-09-25
 
 ## [0.6.0] - 2026-09-22

@@ -8,6 +8,7 @@ pub type Result<T> = core::result::Result<T, Error>;
 
 /// Errors that can occur during solar position calculations.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum Error {
     /// Invalid latitude value (must be between -90 and +90 degrees).
     InvalidLatitude {
@@ -17,6 +18,11 @@ pub enum Error {
     /// Invalid longitude value (must be between -180 and +180 degrees).
     InvalidLongitude {
         /// The invalid longitude value provided.
+        value: f64,
+    },
+    /// Non-finite observer height, or nonzero height with Grena3.
+    InvalidHeight {
+        /// The invalid height in metres above sea level.
         value: f64,
     },
     /// Invalid elevation angle for sunrise/sunset calculations.
@@ -61,6 +67,12 @@ impl fmt::Display for Error {
                     "invalid longitude {value}° (must be between -180° and +180°)"
                 )
             }
+            Self::InvalidHeight { value } => {
+                write!(
+                    f,
+                    "invalid observer height {value} m (must be finite; Grena3 requires zero)"
+                )
+            }
             Self::InvalidElevationAngle { value } => {
                 write!(
                     f,
@@ -68,12 +80,15 @@ impl fmt::Display for Error {
                 )
             }
             Self::InvalidPressure { value } => {
-                write!(f, "invalid pressure {value} mbar (must be positive)")
+                write!(
+                    f,
+                    "invalid pressure {value} hPa (must be positive and at most 2000)"
+                )
             }
             Self::InvalidTemperature { value } => {
                 write!(
                     f,
-                    "invalid temperature {value}°C (must be above absolute zero)"
+                    "invalid temperature {value}°C (must be greater than -273 and at most 100)"
                 )
             }
             Self::InvalidDateTime { message } => {
@@ -86,8 +101,7 @@ impl fmt::Display for Error {
     }
 }
 
-#[cfg(feature = "std")]
-impl std::error::Error for Error {}
+impl core::error::Error for Error {}
 
 /// Validates latitude is within the valid range (-90 to +90 degrees).
 ///
@@ -136,7 +150,7 @@ pub fn check_elevation_angle(elevation_angle: f64) -> Result<()> {
 /// Validates pressure is positive and reasonable for atmospheric calculations.
 ///
 /// # Errors
-/// Returns `InvalidPressure` if pressure is not between 1 and 2000 hPa.
+/// Returns `InvalidPressure` unless pressure is finite, positive and at most 2000 hPa.
 pub fn check_pressure(pressure: f64) -> Result<()> {
     if !pressure.is_finite() || pressure <= 0.0 || pressure > 2000.0 {
         return Err(Error::InvalidPressure { value: pressure });
@@ -144,12 +158,13 @@ pub fn check_pressure(pressure: f64) -> Result<()> {
     Ok(())
 }
 
-/// Validates temperature is above absolute zero and reasonable for atmospheric calculations.
+/// Validates temperature for the atmospheric refraction formula.
 ///
 /// # Errors
-/// Returns `InvalidTemperature` if temperature is outside -273.15 to 100°C.
+/// Returns `InvalidTemperature` unless temperature is finite, greater than -273°C and at most 100°C.
 pub fn check_temperature(temperature: f64) -> Result<()> {
-    if !(-273.15..=100.0).contains(&temperature) {
+    // The refraction formula divides by 273 + temperature.
+    if !temperature.is_finite() || temperature <= -273.0 || temperature > 100.0 {
         return Err(Error::InvalidTemperature { value: temperature });
     }
     Ok(())
@@ -248,8 +263,19 @@ mod tests {
         assert!(check_temperature(-40.0).is_ok());
         assert!(check_temperature(50.0).is_ok());
 
-        assert!(check_temperature(-300.0).is_err());
-        assert!(check_temperature(150.0).is_err());
+        assert!(check_temperature(-272.999).is_ok());
+        assert!(check_temperature(100.0).is_ok());
+        for temperature in [
+            -300.0,
+            -273.15,
+            -273.0,
+            150.0,
+            f64::NAN,
+            f64::NEG_INFINITY,
+            f64::INFINITY,
+        ] {
+            assert!(check_temperature(temperature).is_err());
+        }
     }
 
     #[test]

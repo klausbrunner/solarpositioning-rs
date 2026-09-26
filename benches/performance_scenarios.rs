@@ -1,176 +1,121 @@
 use chrono::{DateTime, Duration, Utc};
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use solar_positioning::{grena3, spa};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use solar_positioning::{Location, RefractionCorrection, SolarPositions, time::JulianDate};
 use std::hint::black_box;
+
+const MODELS: [(&str, SolarPositions); 2] = [
+    ("spa", SolarPositions::new()),
+    ("grena3", SolarPositions::grena3()),
+];
+const LOCATION: Location = Location {
+    latitude: 37.7749,
+    longitude: -122.4194,
+};
+const REFRACTION: Option<RefractionCorrection> = Some(RefractionCorrection::standard());
 
 fn benchmark_single_calculation(c: &mut Criterion) {
     let mut group = c.benchmark_group("single");
-    group.sample_size(10);
-    group.warm_up_time(std::time::Duration::from_secs(1));
-    group.measurement_time(std::time::Duration::from_secs(3));
-
-    let datetime = "2023-06-21T12:00:00Z".parse::<DateTime<Utc>>().unwrap();
-    let lat = 37.7749;
-    let lon = -122.4194;
-
-    group.bench_function("spa", |b| {
-        b.iter(|| {
-            spa::solar_position(
-                black_box(datetime),
-                black_box(lat),
-                black_box(lon),
-                black_box(0.0),
-                black_box(69.0),
-                black_box(Some(
-                    solar_positioning::RefractionCorrection::new(1013.25, 15.0).unwrap(),
-                )),
-            )
-            .unwrap()
-        })
-    });
-
-    group.bench_function("grena3", |b| {
-        b.iter(|| {
-            grena3::solar_position(
-                black_box(datetime),
-                black_box(lat),
-                black_box(lon),
-                black_box(69.0),
-                black_box(None),
-            )
-            .unwrap()
-        })
-    });
-
+    let time = "2023-06-21T12:00:00Z".parse::<DateTime<Utc>>().unwrap();
+    for (name, positions) in MODELS {
+        group.bench_function(name, |b| {
+            b.iter(|| {
+                positions
+                    .at(
+                        black_box(&time),
+                        black_box(LOCATION),
+                        black_box(0.0),
+                        black_box(69.0),
+                        black_box(REFRACTION),
+                    )
+                    .unwrap()
+            })
+        });
+    }
     group.finish();
 }
 
 fn benchmark_time_series_fixed_location(c: &mut Criterion) {
     let mut group = c.benchmark_group("time_series_fixed_location");
     group.sample_size(10);
-    group.warm_up_time(std::time::Duration::from_secs(1));
-    group.measurement_time(std::time::Duration::from_secs(5));
-
-    let base_datetime = "2023-06-21T00:00:00Z".parse::<DateTime<Utc>>().unwrap();
-    let lat = 37.7749;
-    let lon = -122.4194;
-
-    for &count in &[100_000, 1_000_000] {
-        // 100K and 1M calculations
-        group.throughput(Throughput::Elements(count));
-
-        let datetimes: Vec<DateTime<Utc>> = (0..count)
-            .map(|i| base_datetime + Duration::hours(i as i64))
+    let start = "2023-06-21T00:00:00Z".parse::<DateTime<Utc>>().unwrap();
+    for count in [100_000_u32, 1_000_000] {
+        group.throughput(Throughput::Elements(u64::from(count)));
+        // Half-hour steps keep even the longest series within both models' validity ranges.
+        let times: Vec<_> = (0..count)
+            .map(|i| start + Duration::minutes(i64::from(i) * 30))
             .collect();
-
-        group.bench_with_input(BenchmarkId::new("spa", count), &count, |b, _| {
-            b.iter(|| {
-                for &dt in &datetimes {
-                    let _result = spa::solar_position(
-                        black_box(dt),
-                        black_box(lat),
-                        black_box(lon),
-                        black_box(0.0),
-                        black_box(69.0),
-                        black_box(Some(
-                            solar_positioning::RefractionCorrection::new(1013.25, 15.0).unwrap(),
-                        )),
-                    )
-                    .unwrap();
-                }
-            })
-        });
-
-        group.bench_with_input(BenchmarkId::new("grena3", count), &count, |b, _| {
-            b.iter(|| {
-                for &dt in &datetimes {
-                    let _result = grena3::solar_position(
-                        black_box(dt),
-                        black_box(lat),
-                        black_box(lon),
-                        black_box(69.0),
-                        black_box(None),
-                    )
-                    .unwrap();
-                }
-            })
-        });
+        for (name, positions) in MODELS {
+            group.bench_with_input(BenchmarkId::new(name, count), &times, |b, times| {
+                b.iter(|| {
+                    for time in times {
+                        black_box(
+                            positions
+                                .at(black_box(time), black_box(LOCATION), 0.0, 69.0, REFRACTION)
+                                .unwrap(),
+                        );
+                    }
+                })
+            });
+        }
     }
-
     group.finish();
 }
 
 fn benchmark_coordinate_sweep_fixed_time(c: &mut Criterion) {
     let mut group = c.benchmark_group("coordinate_sweep_fixed_time");
     group.sample_size(10);
-    group.warm_up_time(std::time::Duration::from_secs(1));
-    group.measurement_time(std::time::Duration::from_secs(5));
-
-    let datetime = "2023-06-21T12:00:00Z".parse::<DateTime<Utc>>().unwrap();
-
-    for &grid_size in &[200, 1000] {
-        // 200x200, 1000x1000 grids (40K, 1M calculations)
-        let count = grid_size * grid_size;
-        group.throughput(Throughput::Elements(count as u64));
-
-        let coordinates: Vec<(f64, f64)> = (0..grid_size)
+    let time = "2023-06-21T12:00:00Z".parse::<DateTime<Utc>>().unwrap();
+    for grid_size in [200_u32, 1000] {
+        let locations: Vec<_> = (0..grid_size)
             .flat_map(|i| {
-                (0..grid_size).map(move |j| {
-                    let lat = -44.9 + (i as f64) * 89.8 / grid_size as f64; // -44.9° to +44.9° latitude (avoid ±90°)
-                    let lon = -179.9 + (j as f64) * 359.8 / grid_size as f64; // Full longitude range
-                    (lat, lon)
+                (0..grid_size).map(move |j| Location {
+                    latitude: -44.9 + f64::from(i) * 89.8 / f64::from(grid_size),
+                    longitude: -179.9 + f64::from(j) * 359.8 / f64::from(grid_size),
                 })
             })
             .collect();
-
-        group.bench_with_input(
-            BenchmarkId::new("spa", format!("{}x{}", grid_size, grid_size)),
-            &count,
-            |b, _| {
-                b.iter(|| {
-                    for &(lat, lon) in &coordinates {
-                        let _result = spa::solar_position(
-                            black_box(datetime),
-                            black_box(lat),
-                            black_box(lon),
-                            black_box(0.0),
-                            black_box(69.0),
-                            black_box(Some(
-                                solar_positioning::RefractionCorrection::new(1013.25, 15.0)
+        group.throughput(Throughput::Elements(locations.len() as u64));
+        for (name, positions) in MODELS {
+            let prepared = positions.for_time(&time, 69.0).unwrap();
+            group.bench_with_input(
+                BenchmarkId::new(name, grid_size),
+                &locations,
+                |b, locations| {
+                    b.iter(|| {
+                        for location in locations {
+                            black_box(
+                                positions
+                                    .at(
+                                        black_box(&time),
+                                        black_box(*location),
+                                        0.0,
+                                        69.0,
+                                        REFRACTION,
+                                    )
                                     .unwrap(),
-                            )),
-                        )
-                        .unwrap();
-                    }
-                })
-            },
-        );
-
-        group.bench_with_input(
-            BenchmarkId::new("grena3", format!("{}x{}", grid_size, grid_size)),
-            &count,
-            |b, _| {
-                b.iter(|| {
-                    for &(lat, lon) in &coordinates {
-                        let _result = grena3::solar_position(
-                            black_box(datetime),
-                            black_box(lat),
-                            black_box(lon),
-                            black_box(69.0),
-                            black_box(None),
-                        )
-                        .unwrap();
-                    }
-                })
-            },
-        );
+                            );
+                        }
+                    })
+                },
+            );
+            group.bench_with_input(
+                BenchmarkId::new(format!("{name}_prepared"), grid_size),
+                &locations,
+                |b, locations| {
+                    b.iter(|| {
+                        for location in locations {
+                            black_box(prepared.at(black_box(*location), 0.0, REFRACTION).unwrap());
+                        }
+                    })
+                },
+            );
+        }
     }
-
     group.finish();
 }
 
-fn benchmark_sunrise_sunset_multiple(c: &mut Criterion) {
-    let mut group = c.benchmark_group("sunrise_sunset_multiple");
+fn benchmark_solar_events_multiple(c: &mut Criterion) {
+    let mut group = c.benchmark_group("solar_events_multiple");
     group.sample_size(20);
     group.warm_up_time(std::time::Duration::from_secs(1));
     group.measurement_time(std::time::Duration::from_secs(4));
@@ -205,15 +150,18 @@ fn benchmark_sunrise_sunset_multiple(c: &mut Criterion) {
         group.throughput(Throughput::Elements(horizons.len() as u64));
         group.bench_with_input(BenchmarkId::new("spa", name), horizons, |b, horizons| {
             b.iter(|| {
-                spa::sunrise_sunset_multiple(
-                    black_box(datetime),
-                    black_box(lat),
-                    black_box(lon),
-                    black_box(69.0),
-                    horizons.iter().copied(),
-                )
-                .collect::<solar_positioning::Result<Vec<_>>>()
-                .unwrap()
+                solar_positioning::SolarEvents::new()
+                    .for_date_multiple(
+                        black_box(datetime.date_naive()),
+                        &Utc,
+                        Location {
+                            latitude: black_box(lat),
+                            longitude: black_box(lon),
+                        },
+                        black_box(69.0),
+                        horizons.iter().copied(),
+                    )
+                    .unwrap()
             })
         });
     }
@@ -221,67 +169,42 @@ fn benchmark_sunrise_sunset_multiple(c: &mut Criterion) {
     group.finish();
 }
 
-fn benchmark_spa_time_dependent(c: &mut Criterion) {
-    let mut group = c.benchmark_group("spa_time_dependent");
-    group.sample_size(20);
-    group.warm_up_time(std::time::Duration::from_secs(1));
-    group.measurement_time(std::time::Duration::from_secs(4));
-
-    let jd = solar_positioning::time::JulianDate::from_utc(2023, 6, 21, 12, 0, 0.0, 69.0).unwrap();
-
-    group.bench_function("from_julian", |b| {
-        b.iter(|| spa::spa_time_dependent_from_julian(black_box(jd)).unwrap())
-    });
-
+fn benchmark_preparation(c: &mut Criterion) {
+    let mut group = c.benchmark_group("preparation");
+    let time = JulianDate::from_utc(2023, 6, 21, 12, 0, 0.0, 69.0).unwrap();
+    for (name, positions) in MODELS {
+        group.bench_function(name, |b| {
+            b.iter(|| positions.for_time_from_julian(black_box(time)))
+        });
+    }
     group.finish();
 }
 
 fn benchmark_mixed_coordinates_and_times(c: &mut Criterion) {
     let mut group = c.benchmark_group("mixed_coordinates_and_times");
     group.sample_size(10);
-    group.warm_up_time(std::time::Duration::from_secs(1));
-    group.measurement_time(std::time::Duration::from_secs(5));
-
-    let base_datetime = "2023-06-21T00:00:00Z".parse::<DateTime<Utc>>().unwrap();
-
-    // 500 coords × 2000 times = 1M calculations (matches sunce pattern)
-    let coords: Vec<(f64, f64)> = (0..500)
-        .map(|i| {
-            let lat = -44.9 + (i as f64) * 89.8 / 500.0;
-            let lon = -179.9 + (i as f64) * 359.8 / 500.0;
-            (lat, lon)
+    let start = "2023-06-21T00:00:00Z".parse::<DateTime<Utc>>().unwrap();
+    // 500 locations × 2000 timestamps, preparing once per timestamp.
+    let locations: Vec<_> = (0..500)
+        .map(|i| Location {
+            latitude: -44.9 + f64::from(i) * 89.8 / 500.0,
+            longitude: -179.9 + f64::from(i) * 359.8 / 500.0,
         })
         .collect();
-
-    let times: Vec<DateTime<Utc>> = (0..2000)
-        .map(|i| base_datetime + Duration::hours(i as i64))
-        .collect();
-
-    let total = (coords.len() * times.len()) as u64;
-    group.throughput(Throughput::Elements(total));
-
-    // Optimized: pre-compute time-dependent parts (sunce pattern)
-    group.bench_function("spa_optimized", |b| {
-        b.iter(|| {
-            for &time in &times {
-                let time_parts =
-                    spa::spa_time_dependent_parts(black_box(time), black_box(69.0)).unwrap();
-                for &(lat, lon) in &coords {
-                    let _result = spa::spa_with_time_dependent_parts(
-                        black_box(lat),
-                        black_box(lon),
-                        black_box(0.0),
-                        black_box(Some(
-                            solar_positioning::RefractionCorrection::new(1013.25, 15.0).unwrap(),
-                        )),
-                        &time_parts,
-                    )
-                    .unwrap();
+    let times: Vec<_> = (0..2000).map(|i| start + Duration::hours(i)).collect();
+    group.throughput(Throughput::Elements((locations.len() * times.len()) as u64));
+    for (name, positions) in MODELS {
+        group.bench_function(name, |b| {
+            b.iter(|| {
+                for time in &times {
+                    let prepared = positions.for_time(black_box(time), 69.0).unwrap();
+                    for location in &locations {
+                        black_box(prepared.at(black_box(*location), 0.0, REFRACTION).unwrap());
+                    }
                 }
-            }
-        })
-    });
-
+            })
+        });
+    }
     group.finish();
 }
 
@@ -290,9 +213,8 @@ criterion_group!(
     benchmark_single_calculation,
     benchmark_time_series_fixed_location,
     benchmark_coordinate_sweep_fixed_time,
-    benchmark_sunrise_sunset_multiple,
-    benchmark_spa_time_dependent,
+    benchmark_solar_events_multiple,
+    benchmark_preparation,
     benchmark_mixed_coordinates_and_times
 );
-
 criterion_main!(benches);

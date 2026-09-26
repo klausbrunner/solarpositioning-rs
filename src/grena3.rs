@@ -12,105 +12,71 @@
 #![allow(clippy::suboptimal_flops)]
 
 use crate::error::check_coordinates;
+use crate::events::EventPosition;
 use crate::math::{
-    asin, atan2, cos, degrees_to_radians, floor, normalize_degrees_0_to_360, radians_to_degrees,
-    rem_euclid, sin, sqrt, tan, PI,
+    PI, asin, atan2, cos, degrees_to_radians, normalize_degrees_0_to_360, radians_to_degrees,
+    rem_euclid, sin, sqrt, tan,
 };
-use crate::time::validate_utc_components;
-use crate::{RefractionCorrection, Result, SolarPosition};
-#[cfg(feature = "chrono")]
-use chrono::{DateTime, Datelike, TimeZone, Timelike};
+use crate::time::JulianDate;
+use crate::{Location, RefractionCorrection, Result, SolarPosition};
 
-/// Calculate solar position using the Grena3 algorithm.
-///
-/// This is a simplified algorithm designed for years 2010-2110 with maximum error of 0.01°.
-/// It's much faster than SPA but less accurate and has a limited time range.
-///
-/// # Arguments
-/// * `datetime` - Timezone-aware date and time
-/// * `latitude` - Observer latitude in degrees (-90° to +90°)
-/// * `longitude` - Observer longitude in degrees (-180° to +180°)
-/// * `delta_t` - ΔT in seconds (difference between TT and UT1)
-/// * `refraction` - Optional atmospheric refraction correction
-///
-/// # Returns
-/// Returns `Ok(SolarPosition)` with azimuth and zenith angles on success.
-///
-/// # Errors
-/// Returns error for invalid coordinates (latitude outside ±90°, longitude outside ±180°).
-///
-/// # Panics
-/// This function does not panic.
-///
-/// # Example
-/// ```rust
-/// use solar_positioning::{grena3, RefractionCorrection};
-/// use chrono::{DateTime, FixedOffset};
-///
-/// let datetime = "2023-06-21T12:00:00-07:00".parse::<DateTime<FixedOffset>>().unwrap();
-///
-/// // Without refraction correction
-/// let position = grena3::solar_position(
-///     datetime,
-///     37.7749,     // San Francisco latitude
-///     -122.4194,   // San Francisco longitude
-///     69.0,        // deltaT (seconds)
-///     None,        // no atmospheric refraction correction
-/// ).unwrap();
-///
-/// // With refraction correction
-/// let position_with_refraction = grena3::solar_position(
-///     datetime,
-///     37.7749,     // San Francisco latitude
-///     -122.4194,   // San Francisco longitude
-///     69.0,        // deltaT (seconds)
-///     Some(RefractionCorrection::standard()), // standard atmospheric conditions
-/// ).unwrap();
-///
-/// println!("Azimuth: {:.3}°", position.azimuth());
-/// println!("Elevation: {:.3}°", position.elevation_angle());
-/// ```
-#[cfg(feature = "chrono")]
-#[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
-#[allow(clippy::needless_pass_by_value)]
-pub fn solar_position<Tz: TimeZone>(
-    datetime: DateTime<Tz>,
-    latitude: f64,
-    longitude: f64,
-    delta_t: f64,
-    refraction: Option<RefractionCorrection>,
-) -> Result<SolarPosition> {
-    // Calculate t (days since 2000-01-01 12:00:00 TT)
-    let t = calc_t(&datetime)?;
-    solar_position_from_t(t, latitude, longitude, delta_t, refraction)
+/// Angles in radians, independent of observer location.
+#[derive(Debug, Clone, Copy)]
+pub struct TimeDependent {
+    sidereal_time: f64,
+    alpha: f64,
+    sin_delta: f64,
+    cos_delta: f64,
 }
 
-/// Calculate solar position from time parameter t.
-///
-/// Core implementation for `no_std` compatibility.
-///
-/// # Arguments
-/// * `t` - Days since 2000-01-01 12:00:00 UT
-/// * `latitude` - Observer latitude in degrees (-90° to +90°)
-/// * `longitude` - Observer longitude in degrees (-180° to +180°)
-/// * `delta_t` - ΔT in seconds (difference between TT and UT1)
-/// * `refraction` - Optional atmospheric refraction correction
-///
-/// # Returns
-/// Returns `Ok(SolarPosition)` with azimuth and zenith angles on success.
-///
-/// # Errors
-/// Returns error for invalid coordinates.
-pub fn solar_position_from_t(
-    t: f64,
+#[inline]
+pub fn solar_position(
     latitude: f64,
     longitude: f64,
-    delta_t: f64,
     refraction: Option<RefractionCorrection>,
+    parts: &TimeDependent,
 ) -> Result<SolarPosition> {
     check_coordinates(latitude, longitude)?;
 
-    let t_e = t + 1.1574e-5 * delta_t;
+    let Position {
+        elevation: e_p,
+        azimuth: gamma,
+        ..
+    } = position(parts, latitude, longitude);
+
+    // Apply refraction correction if provided and sun is visible
+    let delta_re = refraction.map_or(0.0, |correction| {
+        if e_p > 0.0 {
+            let pressure = correction.pressure();
+            let temperature = correction.temperature();
+            (0.08422 * (pressure / 1000.0))
+                / ((273.0 + temperature) * tan(e_p + 0.003138 / (e_p + 0.08919)))
+        } else {
+            0.0
+        }
+    });
+
+    let z = PI / 2.0 - e_p - delta_re;
+
+    let azimuth = normalize_degrees_0_to_360(radians_to_degrees(gamma + PI));
+    let zenith = radians_to_degrees(z);
+
+    SolarPosition::new(azimuth, zenith)
+}
+
+// Unrefracted angles in radians; azimuth is measured westwards from south.
+struct Position {
+    elevation: f64,
+    azimuth: f64,
+    hour_angle: f64,
+}
+
+#[inline]
+pub fn time_dependent(time: JulianDate) -> TimeDependent {
+    // Continuous UT days from Grena's epoch (2060-01-01), avoiding the calendar
+    // formula's rounded hours-to-days constant and its tiny midnight jump.
+    let t = time.julian_date() - 2_473_459.5;
+    let t_e = t + 1.1574e-5 * time.delta_t();
     let omega_at_e = 0.0172019715 * t_e;
 
     // Calculate apparent sun longitude (lambda)
@@ -133,125 +99,52 @@ pub fn solar_position_from_t(
     // Calculate declination (delta)
     let delta = asin(s_lambda * s_epsilon);
 
+    let sin_delta = sin(delta);
+    let cos_delta = sqrt(1.0 - sin_delta * sin_delta);
+    TimeDependent {
+        sidereal_time: 1.7528311 + 6.300388099 * t,
+        alpha,
+        sin_delta,
+        cos_delta,
+    }
+}
+
+fn position(parts: &TimeDependent, latitude: f64, longitude: f64) -> Position {
     // Calculate hour angle (H)
     let h = rem_euclid(
-        1.7528311 + 6.300388099 * t + degrees_to_radians(longitude) - alpha + PI,
+        parts.sidereal_time + degrees_to_radians(longitude) - parts.alpha + PI,
         2.0 * PI,
     ) - PI;
 
     // Calculate topocentric coordinates
     let s_phi = sin(degrees_to_radians(latitude));
     let c_phi = sqrt(1.0 - s_phi * s_phi);
-    let s_delta = sin(delta);
-    let c_delta = sqrt(1.0 - s_delta * s_delta);
+    let s_delta = parts.sin_delta;
+    let c_delta = parts.cos_delta;
     let s_h = sin(h);
     let c_h = cos(h);
 
-    let s_epsilon0 = s_phi * s_delta + c_phi * c_delta * c_h;
+    // Roundoff can put the sine just outside [-1, 1] at the zenith or nadir.
+    let s_epsilon0 = (s_phi * s_delta + c_phi * c_delta * c_h).clamp(-1.0, 1.0);
     let e_p = asin(s_epsilon0) - 4.26e-5 * sqrt(1.0 - s_epsilon0 * s_epsilon0);
     let gamma = atan2(s_h, c_h * s_phi - s_delta * c_phi / c_delta);
 
-    // Apply refraction correction if provided and sun is visible
-    let delta_re = refraction.map_or(0.0, |correction| {
-        if e_p > 0.0 {
-            let pressure = correction.pressure();
-            let temperature = correction.temperature();
-            (0.08422 * (pressure / 1000.0))
-                / ((273.0 + temperature) * tan(e_p + 0.003138 / (e_p + 0.08919)))
-        } else {
-            0.0
-        }
-    });
-
-    let z = PI / 2.0 - e_p - delta_re;
-
-    let azimuth = normalize_degrees_0_to_360(radians_to_degrees(gamma + PI));
-    let zenith = radians_to_degrees(z);
-
-    SolarPosition::new(azimuth, zenith)
+    Position {
+        elevation: e_p,
+        azimuth: gamma,
+        hour_angle: h,
+    }
 }
 
-/// Calculate t parameter from date/time components (days since 2000-01-01 12:00:00 UT).
-///
-/// This is the core calculation that doesn't require chrono.
-///
-/// # Errors
-/// Returns error if date/time components are outside valid ranges or not finite.
-pub fn calc_t_from_components(
-    year: i32,
-    month: u32,
-    day: u32,
-    hour: u32,
-    minute: u32,
-    second: f64,
-) -> Result<f64> {
-    validate_utc_components(year, month, day, hour, minute, second)?;
-
-    let mut m = month;
-    let mut y = year;
-    let h = f64::from(hour) + f64::from(minute) / 60.0 + second / 3600.0;
-
-    if m <= 2 {
-        m += 12;
-        y -= 1;
-    }
-
-    Ok(
-        floor(365.25 * f64::from(y - 2000)) + floor(30.6001 * f64::from(m + 1))
-            - floor(0.01 * f64::from(y))
-            + f64::from(day)
-            + 0.0416667 * h
-            - 21958.0,
-    )
-}
-
-/// Calculate t parameter (days since 2000-01-01 12:00:00 TT)
-#[cfg(feature = "chrono")]
-fn calc_t<Tz: TimeZone>(datetime: &DateTime<Tz>) -> Result<f64> {
-    // Convert to UTC for proper astronomical calculations
-    let utc_datetime = datetime.with_timezone(&chrono::Utc);
-    calc_t_from_components(
-        utc_datetime.year(),
-        utc_datetime.month(),
-        utc_datetime.day(),
-        utc_datetime.hour(),
-        utc_datetime.minute(),
-        f64::from(utc_datetime.second()) + f64::from(utc_datetime.nanosecond()) / 1e9,
-    )
-}
-
-#[cfg(all(test, feature = "chrono"))]
-mod tests {
-    use super::*;
-    use chrono::{DateTime, FixedOffset};
-
-    #[test]
-    fn test_grena3_coordinate_validation() {
-        let datetime = "2023-06-21T12:00:00-07:00"
-            .parse::<DateTime<FixedOffset>>()
-            .unwrap();
-
-        // Invalid latitude
-        assert!(solar_position(datetime, 95.0, 0.0, 0.0, None).is_err());
-
-        // Invalid longitude
-        assert!(solar_position(datetime, 0.0, 185.0, 0.0, None).is_err());
-    }
-
-    #[test]
-    fn test_calc_t_pre_2000_flooring() {
-        let t = calc_t_from_components(1999, 12, 31, 0, 0, 0.0).unwrap();
-        assert_eq!(t, -21915.0);
-    }
-
-    #[test]
-    fn test_calc_t_validation() {
-        assert!(calc_t_from_components(2024, 13, 1, 0, 0, 0.0).is_err());
-        assert!(calc_t_from_components(2024, 1, 32, 0, 0, 0.0).is_err());
-        assert!(calc_t_from_components(2024, 2, 30, 0, 0, 0.0).is_err());
-        assert!(calc_t_from_components(1582, 10, 10, 0, 0, 0.0).is_err());
-        assert!(calc_t_from_components(2024, 1, 1, 24, 0, 0.0).is_err());
-        assert!(calc_t_from_components(2024, 1, 1, 0, 60, 0.0).is_err());
-        assert!(calc_t_from_components(2024, 1, 1, 0, 0, 60.0).is_err());
-    }
+#[allow(clippy::unnecessary_wraps)] // Matches the fallible position-provider contract.
+pub fn event_position(time: JulianDate, location: Location) -> Result<EventPosition> {
+    let Location {
+        latitude,
+        longitude,
+    } = location;
+    let position = position(&time_dependent(time), latitude, longitude);
+    Ok(EventPosition {
+        elevation: position.elevation.to_degrees(),
+        hour_angle: position.hour_angle.to_degrees(),
+    })
 }

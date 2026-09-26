@@ -1,8 +1,21 @@
 //! Core data types for solar positioning calculations.
 
-use crate::error::{check_azimuth, check_pressure, check_temperature, check_zenith_angle};
-use crate::math::{floor, rem_euclid};
 use crate::Result;
+use crate::error::{check_azimuth, check_pressure, check_temperature, check_zenith_angle};
+
+const SUNRISE_SUNSET_ELEVATION: f64 = -50.0 / 60.0;
+
+/// Geographic coordinates in degrees, with longitude positive east.
+///
+/// Event calculations use sea level. Calculators validate latitude in [-90, 90]
+/// and longitude in [-180, 180], rejecting non-finite coordinates.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Location {
+    /// Latitude in degrees, positive north.
+    pub latitude: f64,
+    /// Longitude in degrees, positive east.
+    pub longitude: f64,
+}
 
 /// Predefined elevation angles for sunrise/sunset calculations.
 ///
@@ -28,7 +41,7 @@ impl Horizon {
     #[must_use]
     pub const fn elevation_angle(&self) -> f64 {
         match self {
-            Self::SunriseSunset => -0.83337, // Accounts for refraction and sun's radius
+            Self::SunriseSunset => SUNRISE_SUNSET_ELEVATION, // Accounts for refraction and sun's radius
             Self::CivilTwilight => -6.0,
             Self::NauticalTwilight => -12.0,
             Self::AstronomicalTwilight => -18.0,
@@ -44,7 +57,7 @@ impl Horizon {
 ///
 /// # Example
 /// ```
-/// # use solar_positioning::types::RefractionCorrection;
+/// # use solar_positioning::RefractionCorrection;
 /// // Standard atmospheric conditions at sea level
 /// let standard = RefractionCorrection::standard();
 /// assert_eq!(standard.pressure(), 1013.25);
@@ -67,11 +80,12 @@ impl RefractionCorrection {
     /// Creates a new refraction correction with the specified atmospheric conditions.
     ///
     /// # Errors
-    /// Returns `InvalidPressure` or `InvalidTemperature` for out-of-range values.
+    /// Returns `InvalidPressure` unless pressure is finite, positive and at most 2000 hPa.
+    /// Returns `InvalidTemperature` unless temperature is finite, greater than -273°C and at most 100°C.
     ///
     /// # Example
     /// ```
-    /// # use solar_positioning::types::RefractionCorrection;
+    /// # use solar_positioning::RefractionCorrection;
     /// let correction = RefractionCorrection::new(1013.25, 15.0).unwrap();
     /// assert_eq!(correction.pressure(), 1013.25);
     /// assert_eq!(correction.temperature(), 15.0);
@@ -93,7 +107,7 @@ impl RefractionCorrection {
     ///
     /// # Example
     /// ```
-    /// # use solar_positioning::types::RefractionCorrection;
+    /// # use solar_positioning::RefractionCorrection;
     /// let standard = RefractionCorrection::standard();
     /// assert_eq!(standard.pressure(), 1013.25);
     /// assert_eq!(standard.temperature(), 15.0);
@@ -142,7 +156,7 @@ impl SolarPosition {
     ///
     /// # Example
     /// ```
-    /// # use solar_positioning::types::SolarPosition;
+    /// # use solar_positioning::SolarPosition;
     /// let position = SolarPosition::new(180.0, 30.0).unwrap();
     /// assert_eq!(position.azimuth(), 180.0);
     /// assert_eq!(position.zenith_angle(), 30.0);
@@ -191,146 +205,13 @@ impl SolarPosition {
     }
 }
 
-/// Hours since midnight UTC that can extend beyond a single day.
-///
-/// Used for sunrise/sunset times without the chrono dependency.
-/// Values represent hours since midnight UTC (0 UT) for the calculation date:
-/// - Negative values indicate the previous day
-/// - 0.0 to < 24.0 indicates the current day
-/// - ≥ 24.0 indicates the next day
-///
-/// # Example
-/// ```
-/// # use solar_positioning::types::HoursUtc;
-/// let morning = HoursUtc::from_hours(6.5); // 06:30 current day
-/// let late_evening = HoursUtc::from_hours(23.5); // 23:30 current day
-/// let after_midnight = HoursUtc::from_hours(24.5); // 00:30 next day
-/// let before_midnight_prev = HoursUtc::from_hours(-0.5); // 23:30 previous day
-/// ```
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct HoursUtc(f64);
-
-impl HoursUtc {
-    /// Creates a new `HoursUtc` from hours since midnight UTC.
-    ///
-    /// Values can be negative (previous day) or ≥ 24.0 (next day).
-    #[must_use]
-    pub const fn from_hours(hours: f64) -> Self {
-        Self(hours)
-    }
-
-    /// Gets the raw hours value.
-    ///
-    /// Can be negative (previous day) or ≥ 24.0 (next day).
-    #[must_use]
-    pub const fn hours(&self) -> f64 {
-        self.0
-    }
-
-    /// Gets the day offset and normalized hours (0.0 to < 24.0).
-    ///
-    /// # Returns
-    /// Tuple of (`day_offset`, `hours_in_day`) where:
-    /// - `day_offset`: whole days offset from the calculation date (negative = previous days, positive = following days)
-    /// - `hours_in_day`: 0.0 to < 24.0
-    ///
-    /// # Example
-    /// ```
-    /// # use solar_positioning::types::HoursUtc;
-    /// let time = HoursUtc::from_hours(25.5);
-    /// let (day_offset, hours) = time.day_and_hours();
-    /// assert_eq!(day_offset, 1);
-    /// assert!((hours - 1.5).abs() < 1e-10);
-    /// ```
-    #[must_use]
-    pub fn day_and_hours(&self) -> (i32, f64) {
-        let hours = self.0;
-        (floor(hours / 24.0) as i32, rem_euclid(hours, 24.0))
-    }
-}
-
-/// Result of sunrise/sunset calculations for a given day.
-///
-/// Solar events can vary significantly based on location and time of year,
-/// especially at extreme latitudes where polar days and nights occur.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(
-    feature = "std",
-    doc = "Default generic parameter is `()`; chrono helpers return `SunriseResult<chrono::DateTime<Tz>>`."
-)]
-pub enum SunriseResult<T = ()> {
-    /// Regular day with distinct sunrise, transit (noon), and sunset times
-    RegularDay {
-        /// Time of sunrise
-        sunrise: T,
-        /// Time of solar transit (when sun crosses meridian, solar noon)
-        transit: T,
-        /// Time of sunset
-        sunset: T,
-    },
-    /// Polar day - sun remains above the specified horizon all day
-    AllDay {
-        /// Time of solar transit (closest approach to zenith)
-        transit: T,
-    },
-    /// Polar night - sun remains below the specified horizon all day
-    AllNight {
-        /// Time of solar transit (when sun is highest, though still below horizon)
-        transit: T,
-    },
-}
-
-impl<T> SunriseResult<T> {
-    /// Gets the transit time (solar noon) for any sunrise result.
-    pub const fn transit(&self) -> &T {
-        match self {
-            Self::RegularDay { transit, .. }
-            | Self::AllDay { transit }
-            | Self::AllNight { transit } => transit,
-        }
-    }
-
-    /// Checks if this represents a regular day with sunrise and sunset.
-    pub const fn is_regular_day(&self) -> bool {
-        matches!(self, Self::RegularDay { .. })
-    }
-
-    /// Checks if this represents a polar day (sun never sets).
-    pub const fn is_polar_day(&self) -> bool {
-        matches!(self, Self::AllDay { .. })
-    }
-
-    /// Checks if this represents a polar night (sun never rises).
-    pub const fn is_polar_night(&self) -> bool {
-        matches!(self, Self::AllNight { .. })
-    }
-
-    /// Gets sunrise time if this is a regular day.
-    pub const fn sunrise(&self) -> Option<&T> {
-        if let Self::RegularDay { sunrise, .. } = self {
-            Some(sunrise)
-        } else {
-            None
-        }
-    }
-
-    /// Gets sunset time if this is a regular day.
-    pub const fn sunset(&self) -> Option<&T> {
-        if let Self::RegularDay { sunset, .. } = self {
-            Some(sunset)
-        } else {
-            None
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_horizon_elevation_angles() {
-        assert_eq!(Horizon::SunriseSunset.elevation_angle(), -0.83337);
+        assert_eq!(Horizon::SunriseSunset.elevation_angle(), -50.0 / 60.0);
         assert_eq!(Horizon::CivilTwilight.elevation_angle(), -6.0);
         assert_eq!(Horizon::NauticalTwilight.elevation_angle(), -12.0);
         assert_eq!(Horizon::AstronomicalTwilight.elevation_angle(), -18.0);
@@ -370,58 +251,6 @@ mod tests {
         let below_horizon = SolarPosition::new(180.0, 120.0).unwrap();
         assert!(!below_horizon.is_sun_up());
         assert!(below_horizon.is_sun_down());
-    }
-
-    #[test]
-    fn test_sunrise_result_regular_day() {
-        use chrono::{DateTime, Utc};
-
-        let sunrise = "2023-06-21T05:30:00Z".parse::<DateTime<Utc>>().unwrap();
-        let transit = "2023-06-21T12:00:00Z".parse::<DateTime<Utc>>().unwrap();
-        let sunset = "2023-06-21T18:30:00Z".parse::<DateTime<Utc>>().unwrap();
-
-        let result = SunriseResult::RegularDay {
-            sunrise,
-            transit,
-            sunset,
-        };
-
-        assert!(result.is_regular_day());
-        assert!(!result.is_polar_day());
-        assert!(!result.is_polar_night());
-        assert_eq!(result.transit(), &transit);
-        assert_eq!(result.sunrise(), Some(&sunrise));
-        assert_eq!(result.sunset(), Some(&sunset));
-    }
-
-    #[test]
-    fn test_sunrise_result_polar_day() {
-        use chrono::{DateTime, Utc};
-
-        let transit = "2023-06-21T12:00:00Z".parse::<DateTime<Utc>>().unwrap();
-        let result = SunriseResult::AllDay { transit };
-
-        assert!(!result.is_regular_day());
-        assert!(result.is_polar_day());
-        assert!(!result.is_polar_night());
-        assert_eq!(result.transit(), &transit);
-        assert_eq!(result.sunrise(), None);
-        assert_eq!(result.sunset(), None);
-    }
-
-    #[test]
-    fn test_sunrise_result_polar_night() {
-        use chrono::{DateTime, Utc};
-
-        let transit = "2023-12-21T12:00:00Z".parse::<DateTime<Utc>>().unwrap();
-        let result = SunriseResult::AllNight { transit };
-
-        assert!(!result.is_regular_day());
-        assert!(!result.is_polar_day());
-        assert!(result.is_polar_night());
-        assert_eq!(result.transit(), &transit);
-        assert_eq!(result.sunrise(), None);
-        assert_eq!(result.sunset(), None);
     }
 
     #[test]

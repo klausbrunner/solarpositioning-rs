@@ -1,15 +1,14 @@
-//! Time-related calculations for solar positioning.
+//! Julian dates and time scales for solar positioning.
 //!
-//! This module provides Julian date calculations and ΔT (Delta T) estimation
-//! following NREL SPA and Espenak & Meeus, with updated ΔT fits from 2015 onwards.
+//! For ΔT estimates, see [`crate::delta_t`].
 
 #![allow(clippy::unreadable_literal)]
 #![allow(clippy::many_single_char_names)]
 
-use crate::math::{floor, polynomial};
+use crate::math::floor;
 use crate::{Error, Result};
 #[cfg(feature = "chrono")]
-use chrono::{Datelike, TimeZone, Timelike};
+use chrono::TimeZone;
 
 /// Seconds per day (86,400)
 const SECONDS_PER_DAY: f64 = 86_400.0;
@@ -21,7 +20,7 @@ const J2000_JDN: f64 = 2_451_545.0;
 const DAYS_PER_CENTURY: f64 = 36_525.0;
 
 /// Validates UTC date/time components against both field ranges and the calendar.
-pub(crate) fn validate_utc_components(
+fn validate_utc_components(
     year: i32,
     month: u32,
     day: u32,
@@ -54,11 +53,6 @@ pub(crate) fn validate_utc_components(
             message: "second must be between 0 and 59.999...",
         });
     }
-    if year == 1582 && month == 10 && (5..=14).contains(&day) {
-        return Err(Error::InvalidDateTime {
-            message: "dates 1582-10-05 through 1582-10-14 do not exist in Gregorian calendar",
-        });
-    }
     if day > days_in_month(year, month) {
         return Err(Error::InvalidDateTime {
             message: "day is out of range for month",
@@ -70,8 +64,9 @@ pub(crate) fn validate_utc_components(
 
 /// Julian date representation for astronomical calculations.
 ///
-/// Follows the SPA algorithm described in Reda & Andreas (2003).
 /// Supports both Julian Date (JD) and Julian Ephemeris Date (JDE) calculations.
+/// Calendar constructors use the proleptic Gregorian calendar, including before 1582,
+/// with year 0 representing 1 BCE. UTC approximates UT1.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct JulianDate {
     /// Julian Date (JD) - referenced to UT1
@@ -81,9 +76,30 @@ pub struct JulianDate {
 }
 
 impl JulianDate {
+    /// Creates a Julian date directly from continuous UT and delta T (TT minus UT1).
+    ///
+    /// This bypasses calendar conversion.
+    ///
+    /// # Errors
+    /// Returns an error if either value, or the resulting TT Julian date, is non-finite.
+    pub fn new(julian_date: f64, delta_t: f64) -> Result<Self> {
+        if !julian_date.is_finite()
+            || !delta_t.is_finite()
+            || !(julian_date + delta_t / SECONDS_PER_DAY).is_finite()
+        {
+            return Err(Error::InvalidDateTime {
+                message: "Julian date and delta_t must be finite",
+            });
+        }
+        Ok(Self {
+            jd: julian_date,
+            delta_t,
+        })
+    }
+
     /// Creates a new Julian date from a timezone-aware chrono `DateTime`.
     ///
-    /// Converts datetime to UTC for proper Julian Date calculation.
+    /// Uses the instant represented by the timestamp, independent of its time zone.
     ///
     /// # Arguments
     /// * `datetime` - Timezone-aware date and time
@@ -93,24 +109,19 @@ impl JulianDate {
     /// Returns `Ok(JulianDate)` on success.
     ///
     /// # Errors
-    /// Returns error if the date/time components are invalid (e.g., invalid month, day, hour).
+    /// Returns an error for a leap-second timestamp or non-finite `delta_t`.
     #[cfg(feature = "chrono")]
     #[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
     pub fn from_datetime<Tz: TimeZone>(
         datetime: &chrono::DateTime<Tz>,
         delta_t: f64,
     ) -> Result<Self> {
-        // Convert the entire datetime to UTC for proper Julian Date calculation
-        let utc_datetime = datetime.with_timezone(&chrono::Utc);
-        Self::from_utc(
-            utc_datetime.year(),
-            utc_datetime.month(),
-            utc_datetime.day(),
-            utc_datetime.hour(),
-            utc_datetime.minute(),
-            f64::from(utc_datetime.second()) + f64::from(utc_datetime.nanosecond()) / 1e9,
-            delta_t,
-        )
+        if datetime.timestamp_subsec_nanos() >= 1_000_000_000 {
+            return Err(Error::InvalidDateTime {
+                message: "leap-second timestamps are not supported",
+            });
+        }
+        Self::new(datetime_to_julian(datetime), delta_t)
     }
 
     /// Creates a new Julian date from year, month, day, hour, minute, and second in UTC.
@@ -147,14 +158,10 @@ impl JulianDate {
         delta_t: f64,
     ) -> Result<Self> {
         validate_utc_components(year, month, day, hour, minute, second)?;
-        if !delta_t.is_finite() {
-            return Err(Error::InvalidDateTime {
-                message: "delta_t must be finite",
-            });
-        }
-
-        let jd = calculate_julian_date(year, month, day, hour, minute, second);
-        Ok(Self { jd, delta_t })
+        Self::new(
+            calculate_julian_date(year, month, day, hour, minute, second),
+            delta_t,
+        )
     }
 
     /// Creates a Julian date assuming ΔT = 0.
@@ -244,20 +251,17 @@ impl JulianDate {
     pub fn julian_ephemeris_millennium(&self) -> f64 {
         self.julian_ephemeris_century() / 10.0
     }
-
-    /// Add days to the Julian date (like Java constructor: new `JulianDate(jd.julianDate()` + i - 1, 0))
-    pub(crate) fn add_days(self, days: f64) -> Self {
-        Self {
-            jd: self.jd + days,
-            delta_t: self.delta_t,
-        }
-    }
 }
 
-/// Calculates Julian Date from UTC date/time components.
-///
-/// This follows the algorithm from Reda & Andreas (2003), which is based on
-/// Meeus, "Astronomical Algorithms", 2nd edition.
+/// Shared by position calculations and event searches. Callers reject leap seconds.
+#[cfg(feature = "chrono")]
+pub(crate) fn datetime_to_julian<Tz: TimeZone>(datetime: &chrono::DateTime<Tz>) -> f64 {
+    2_440_587.5
+        + datetime.timestamp() as f64 / SECONDS_PER_DAY
+        + f64::from(datetime.timestamp_subsec_nanos()) / 86400e9
+}
+
+/// Meeus's Julian date calculation, applying Gregorian rules to every year.
 fn calculate_julian_date(
     year: i32,
     month: u32,
@@ -266,11 +270,11 @@ fn calculate_julian_date(
     minute: u32,
     second: f64,
 ) -> f64 {
-    let mut y = year;
+    let mut y = f64::from(year);
 
     // Adjust for January and February being treated as months 13 and 14 of previous year
     let m = if month < 3 {
-        y -= 1;
+        y -= 1.0;
         month + 12
     } else {
         month
@@ -280,26 +284,14 @@ fn calculate_julian_date(
     let d = f64::from(day) + (f64::from(hour) + (f64::from(minute) + second / 60.0) / 60.0) / 24.0;
 
     // Basic Julian Date calculation
-    let mut jd =
-        floor(365.25 * (f64::from(y) + 4716.0)) + floor(30.6001 * f64::from(m + 1)) + d - 1524.5;
-
-    // Gregorian calendar correction (after October 15, 1582)
-    // JDN 2299161 corresponds to October 15, 1582
-    if jd >= 2_299_161.0 {
-        let a = floor(f64::from(y) / 100.0);
-        let b = 2.0 - a + floor(a / 4.0);
-        jd += b;
-    }
-
-    jd
+    let jd = floor(365.25 * (y + 4716.0)) + floor(30.6001 * f64::from(m + 1)) + d - 1524.5;
+    let a = floor(y / 100.0);
+    let b = 2.0 - a + floor(a / 4.0);
+    jd + b
 }
 
 fn days_in_month(year: i32, month: u32) -> u32 {
-    let is_leap_year = if year > 1582 || (year == 1582 && month > 10) {
-        (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
-    } else {
-        year % 4 == 0
-    };
+    let is_leap_year = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
 
     match month {
         1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
@@ -310,235 +302,6 @@ fn days_in_month(year: i32, month: u32) -> u32 {
     }
 }
 
-/// ΔT (Delta T) estimation functions.
-///
-/// ΔT represents the difference between Terrestrial Time (TT) and Universal Time (UT1).
-/// Based on Espenak and Meeus, with [Espenak's 2014 update](https://www.eclipsewise.com/help/deltatpoly2014.html).
-/// The branches from 2015 onwards use a [2026 adaptation](https://klaus.brunners.name/posts/delta-t-polynomials/):
-/// a quartic fitted to IERS observations through mid-2026, followed by a quadratic
-/// fitted to a median of simulations by Agnew (2026).
-///
-/// Future values are (very) uncertain extrapolations, particularly beyond 2100.
-pub struct DeltaT;
-
-impl DeltaT {
-    /// Estimates ΔT for a given decimal year.
-    ///
-    /// Uses the historical polynomials and updated fits described in [`DeltaT`].
-    ///
-    /// # Arguments
-    /// * `decimal_year` - Year with fractional part (e.g., 2024.5 for mid-2024)
-    ///
-    /// # Returns
-    /// Estimated ΔT in seconds
-    ///
-    /// # Errors
-    /// Returns error for years outside the valid range (-500 to 3000 CE)
-    ///
-    /// # Example
-    /// ```
-    /// # use solar_positioning::time::DeltaT;
-    /// let delta_t = DeltaT::estimate(2024.0).unwrap();
-    /// assert!(delta_t > 60.0 && delta_t < 80.0); // Reasonable range for 2024
-    /// ```
-    #[allow(clippy::too_many_lines)] // Comprehensive polynomial fit across historical periods
-    pub fn estimate(decimal_year: f64) -> Result<f64> {
-        let year = decimal_year;
-
-        if !year.is_finite() {
-            return Err(Error::InvalidDateTime {
-                message: "year must be finite",
-            });
-        }
-
-        if year < -500.0 {
-            return Err(Error::InvalidDateTime {
-                message: "ΔT estimates not available before year -500",
-            });
-        }
-
-        let delta_t = if year < 500.0 {
-            let u = year / 100.0;
-            polynomial(
-                &[
-                    10583.6,
-                    -1014.41,
-                    33.78311,
-                    -5.952053,
-                    -0.1798452,
-                    0.022174192,
-                    0.0090316521,
-                ],
-                u,
-            )
-        } else if year < 1600.0 {
-            let u = (year - 1000.0) / 100.0;
-            polynomial(
-                &[
-                    1574.2,
-                    -556.01,
-                    71.23472,
-                    0.319781,
-                    -0.8503463,
-                    -0.005050998,
-                    0.0083572073,
-                ],
-                u,
-            )
-        } else if year < 1700.0 {
-            let t = year - 1600.0;
-            polynomial(&[120.0, -0.9808, -0.01532, 1.0 / 7129.0], t)
-        } else if year < 1800.0 {
-            let t = year - 1700.0;
-            polynomial(
-                &[8.83, 0.1603, -0.0059285, 0.00013336, -1.0 / 1_174_000.0],
-                t,
-            )
-        } else if year < 1860.0 {
-            let t = year - 1800.0;
-            polynomial(
-                &[
-                    13.72,
-                    -0.332447,
-                    0.0068612,
-                    0.0041116,
-                    -0.00037436,
-                    0.0000121272,
-                    -0.0000001699,
-                    0.000000000875,
-                ],
-                t,
-            )
-        } else if year < 1900.0 {
-            let t = year - 1860.0;
-            polynomial(
-                &[
-                    7.62,
-                    0.5737,
-                    -0.251754,
-                    0.01680668,
-                    -0.0004473624,
-                    1.0 / 233_174.0,
-                ],
-                t,
-            )
-        } else if year < 1920.0 {
-            let t = year - 1900.0;
-            polynomial(&[-2.79, 1.494119, -0.0598939, 0.0061966, -0.000197], t)
-        } else if year < 1941.0 {
-            let t = year - 1920.0;
-            polynomial(&[21.20, 0.84493, -0.076100, 0.0020936], t)
-        } else if year < 1961.0 {
-            let t = year - 1950.0;
-            polynomial(&[29.07, 0.407, -1.0 / 233.0, 1.0 / 2547.0], t)
-        } else if year < 1986.0 {
-            let t = year - 1975.0;
-            polynomial(&[45.45, 1.067, -1.0 / 260.0, -1.0 / 718.0], t)
-        } else if year < 2005.0 {
-            let t = year - 2000.0;
-            polynomial(
-                &[
-                    63.86,
-                    0.3345,
-                    -0.060374,
-                    0.0017275,
-                    0.000651814,
-                    0.00002373599,
-                ],
-                t,
-            )
-        } else if year < 2015.0 {
-            let t = year - 2005.0;
-            polynomial(&[64.69, 0.2930], t)
-        } else if year < 2026.5 {
-            let t = year - 2015.0;
-            // Retain full precision; the branches join in value and slope at 2015 and 2026.5.
-            polynomial(
-                &[
-                    67.62,
-                    0.2930,
-                    0.08753166427153103,
-                    -0.020049795884351372,
-                    0.0009758496126416308,
-                ],
-                t,
-            )
-        } else if year <= 3000.0 {
-            let t = year - 2026.5;
-            polynomial(&[69.14, 0.28805287963416737, 0.0057380400318460655], t)
-        } else {
-            return Err(Error::InvalidDateTime {
-                message: "ΔT estimates not available beyond year 3000",
-            });
-        };
-
-        Ok(delta_t)
-    }
-
-    /// Estimates ΔT at the midpoint of the given calendar month.
-    ///
-    /// Calculates decimal year as: year + (month - 0.5) / 12
-    ///
-    /// # Arguments
-    /// * `year` - Year
-    /// * `month` - Month (1-12)
-    ///
-    /// # Returns
-    /// Returns estimated ΔT in seconds.
-    ///
-    /// # Errors
-    /// Returns error if month is outside the range 1-12.
-    ///
-    /// # Panics
-    /// This function does not panic.
-    pub fn estimate_from_date(year: i32, month: u32) -> Result<f64> {
-        if !(1..=12).contains(&month) {
-            return Err(Error::InvalidDateTime {
-                message: "month must be between 1 and 12",
-            });
-        }
-
-        let decimal_year = f64::from(year) + (f64::from(month) - 0.5) / 12.0;
-        Self::estimate(decimal_year)
-    }
-
-    /// Estimates ΔT from any date-like type.
-    ///
-    /// Convenience method that extracts the year and month from any chrono type
-    /// that implements `Datelike` (`DateTime`, `NaiveDateTime`, `NaiveDate`, etc.).
-    /// Uses the midpoint of its calendar month, ignoring the day and time.
-    ///
-    /// # Arguments
-    /// * `date` - Any date-like type
-    ///
-    /// # Returns
-    /// Returns estimated ΔT in seconds.
-    ///
-    /// # Errors
-    /// Returns error if the date components are invalid.
-    ///
-    /// # Example
-    /// ```
-    /// # use solar_positioning::time::DeltaT;
-    /// # use chrono::{DateTime, FixedOffset, NaiveDate};
-    ///
-    /// // Works with DateTime
-    /// let datetime = "2024-06-21T12:00:00-07:00".parse::<DateTime<FixedOffset>>().unwrap();
-    /// let delta_t = DeltaT::estimate_from_date_like(datetime).unwrap();
-    /// assert!(delta_t > 60.0 && delta_t < 80.0);
-    ///
-    /// // Also works with NaiveDate
-    /// let date = NaiveDate::from_ymd_opt(2024, 6, 21).unwrap();
-    /// let delta_t2 = DeltaT::estimate_from_date_like(date).unwrap();
-    /// assert_eq!(delta_t, delta_t2);
-    #[cfg(feature = "chrono")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
-    #[allow(clippy::needless_pass_by_value)]
-    pub fn estimate_from_date_like<D: Datelike>(date: D) -> Result<f64> {
-        Self::estimate_from_date(date.year(), date.month())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -546,23 +309,13 @@ mod tests {
     const EPSILON: f64 = 1e-10;
 
     #[test]
-    fn test_julian_date_creation() {
-        let jd = JulianDate::from_utc(2000, 1, 1, 12, 0, 0.0, 0.0).unwrap();
-
-        // J2000.0 epoch should be exactly 2451545.0
-        assert!((jd.julian_date() - J2000_JDN).abs() < EPSILON);
-        assert_eq!(jd.delta_t(), 0.0);
-    }
-
-    #[test]
     fn test_julian_date_invalid_day_validation() {
         assert!(JulianDate::from_utc(2024, 2, 30, 0, 0, 0.0, 0.0).is_err());
         assert!(JulianDate::from_utc(2024, 2, 29, 0, 0, 0.0, 0.0).is_ok());
         assert!(JulianDate::from_utc(1900, 2, 29, 0, 0, 0.0, 0.0).is_err());
-        assert!(JulianDate::from_utc(1500, 2, 29, 0, 0, 0.0, 0.0).is_ok());
-        assert!(JulianDate::from_utc(1582, 10, 10, 0, 0, 0.0, 0.0).is_err());
-        assert!(JulianDate::from_utc(1582, 10, 4, 0, 0, 0.0, 0.0).is_ok());
-        assert!(JulianDate::from_utc(1582, 10, 15, 0, 0, 0.0, 0.0).is_ok());
+        assert!(JulianDate::from_utc(1500, 2, 29, 0, 0, 0.0, 0.0).is_err());
+        assert!(JulianDate::from_utc(0, 2, 29, 0, 0, 0.0, 0.0).is_ok());
+        assert!(JulianDate::from_utc(-100, 2, 29, 0, 0, 0.0, 0.0).is_err());
     }
 
     #[test]
@@ -574,7 +327,15 @@ mod tests {
         assert!(JulianDate::from_utc(2024, 1, 1, 0, 0, 60.0, 0.0).is_err()); // Invalid second
         assert!(JulianDate::from_utc(2024, 1, 1, 0, 0, 0.0, f64::NAN).is_err()); // Non-finite delta_t
         assert!(JulianDate::from_utc(2024, 1, 1, 0, 0, 0.0, f64::INFINITY).is_err());
-        // Non-finite delta_t
+        // Date conversion must not overflow at the i32 year boundaries.
+        for year in [i32::MIN, i32::MAX] {
+            assert!(
+                JulianDate::from_utc(year, 1, 1, 0, 0, 0.0, 0.0)
+                    .unwrap()
+                    .julian_date()
+                    .is_finite()
+            );
+        }
     }
 
     #[test]
@@ -599,216 +360,53 @@ mod tests {
     }
 
     #[test]
-    fn test_gregorian_calendar_correction() {
-        // Test dates before and after Gregorian calendar adoption
-        // October 4, 1582 was followed by October 15, 1582
-        let julian_date = JulianDate::from_utc(1582, 10, 4, 12, 0, 0.0, 0.0).unwrap();
-        let gregorian_date = JulianDate::from_utc(1582, 10, 15, 12, 0, 0.0, 0.0).unwrap();
-
-        // The calendar dates are 11 days apart, but in Julian Day Numbers they should be 1 day apart
-        // because the 10-day gap was artificial
-        let diff = gregorian_date.julian_date() - julian_date.julian_date();
-        assert!(
-            (diff - 1.0).abs() < 1e-6,
-            "Expected 1 day difference in JD, got {diff}"
-        );
-
-        // Test that the Gregorian correction is applied correctly
-        // Dates after October 15, 1582 should have the correction
-        let pre_gregorian = JulianDate::from_utc(1582, 10, 1, 12, 0, 0.0, 0.0).unwrap();
-        let post_gregorian = JulianDate::from_utc(1583, 1, 1, 12, 0, 0.0, 0.0).unwrap();
-
-        // Verify that both exist and the calculation doesn't panic
-        assert!(pre_gregorian.julian_date() > 2_000_000.0);
-        assert!(post_gregorian.julian_date() > pre_gregorian.julian_date());
-    }
-
-    #[test]
-    fn test_delta_t_modern_estimates() {
-        // Test some known ranges
-        let delta_t_2000 = DeltaT::estimate(2000.0).unwrap();
-        let delta_t_2020 = DeltaT::estimate(2020.0).unwrap();
-
-        assert!(delta_t_2000 > 60.0 && delta_t_2000 < 70.0);
-        assert!(delta_t_2020 > 65.0 && delta_t_2020 < 75.0);
-        assert!(delta_t_2020 > delta_t_2000); // ΔT is generally increasing
-    }
-
-    #[test]
-    fn test_delta_t_adaptation_reference_values() {
-        let cases = [
-            (2000.0, 63.86),
-            (2005.0, 64.69),
-            (2010.0, 66.155),
-            (2014.999, 67.619707),
-            (2015.0, 67.62),
-            (2017.0, 68.41134188381358),
-            (2020.0, 69.37697312914538),
-            (2023.0, 69.29761103397021),
-            (2026.0, 69.0354672334697),
-            (2026.5, 69.14),
-            (2027.0, 69.28546094982505),
-            (2030.0, 70.21847606910971),
-            (2045.0, 76.43282247413141),
-            (2100.0, 121.31021341515171),
-            (3000.0, 5787.51292709445),
-        ];
-
-        for (year, expected) in cases {
-            let actual = DeltaT::estimate(year).unwrap();
-            assert!(
-                (actual - expected).abs() < EPSILON,
-                "year {year}: {actual} vs {expected}"
-            );
-        }
-    }
-
-    #[test]
-    fn test_delta_t_recent_iers_observations() {
-        // IERS 20u24 C04, downloaded 14 September 2026; ΔT = 32.184 + TAI-UTC - UT1-UTC.
-        let cases = [
-            (2015.0, 67.6439282),
-            (2017.0, 68.5927130),
-            (2017.4246575342465, 68.8085579),
-            (2020.0, 69.3611665),
-            (2023.0, 69.2038475),
-            (2026.0, 69.1099131),
-            (2026.4986301369863, 69.1691721),
-        ];
-
-        for (year, observed) in cases {
-            let estimated = DeltaT::estimate(year).unwrap();
-            assert!(
-                (estimated - observed).abs() < 0.22,
-                "year {year}: {estimated} vs {observed}"
-            );
-        }
-    }
-
-    #[test]
-    fn test_delta_t_continuous_at_updated_boundaries() {
-        for (year, expected) in [(2015.0_f64, 67.62), (2026.5, 69.14)] {
-            for adjacent_year in [
-                f64::from_bits(year.to_bits() - 1),
-                year,
-                f64::from_bits(year.to_bits() + 1),
-            ] {
-                let actual = DeltaT::estimate(adjacent_year).unwrap();
-                assert!(
-                    (actual - expected).abs() < 1e-12,
-                    "year {adjacent_year}: {actual}"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn test_delta_t_smooth_joins_at_updated_boundaries() {
-        for year in [2015.0, 2026.5] {
-            let step = 1e-4;
-            let value = DeltaT::estimate(year).unwrap();
-            let left_slope = (value - DeltaT::estimate(year - step).unwrap()) / step;
-            let right_slope = (DeltaT::estimate(year + step).unwrap() - value) / step;
-            assert!(
-                (left_slope - right_slope).abs() < 2e-5,
-                "year {year}: left slope {left_slope} vs right slope {right_slope}"
-            );
-        }
-    }
-
-    #[test]
-    fn test_delta_t_date_helpers_at_updated_branches() {
-        for (year, month) in [(2014, 12), (2015, 1), (2026, 6), (2026, 7)] {
-            let decimal_year = f64::from(year) + (f64::from(month) - 0.5) / 12.0;
-            let expected = DeltaT::estimate(decimal_year).unwrap();
-            assert_eq!(DeltaT::estimate_from_date(year, month).unwrap(), expected);
-
+    fn test_proleptic_gregorian_dates() {
+        // Shared with Java; Julian days cross-check against JDK JulianFields.
+        for (year, month, day, hour, expected) in [
+            (-4713, 11, 24, 0, -0.5),
+            (-123, 12, 28, 0, 1_676_496.5),
+            (-123, 12, 29, 0, 1_676_497.5),
+            (837, 4, 14, 0, 2_026_871.5),
+            (1582, 10, 4, 0, 2_299_149.5),
+            (1582, 10, 10, 0, 2_299_155.5),
+            (1582, 10, 15, 0, 2_299_160.5),
+            (1970, 1, 1, 0, 2_440_587.5),
+            (2000, 1, 1, 12, J2000_JDN),
+        ] {
+            let jd = JulianDate::from_utc(year, month, day, hour, 0, 0.0, 69.184).unwrap();
+            assert_eq!(jd.julian_date(), expected, "{year}-{month}-{day}");
+            assert_eq!(jd.delta_t(), 69.184);
             #[cfg(feature = "chrono")]
-            for day in [1, 28] {
-                let date = chrono::NaiveDate::from_ymd_opt(year, month, day).unwrap();
-                assert_eq!(DeltaT::estimate_from_date_like(date).unwrap(), expected);
+            {
+                let time = chrono::Utc
+                    .with_ymd_and_hms(year, month, day, hour, 0, 0)
+                    .unwrap();
+                assert_eq!(JulianDate::from_datetime(&time, 69.184).unwrap(), jd);
             }
         }
     }
 
-    #[test]
-    fn test_delta_t_historical_estimates() {
-        let delta_t_1900 = DeltaT::estimate(1900.0).unwrap();
-        let delta_t_1950 = DeltaT::estimate(1950.0).unwrap();
-
-        assert!(delta_t_1900 < 0.0); // Negative in early 20th century
-        assert!(delta_t_1950 > 25.0 && delta_t_1950 < 35.0);
-    }
-
-    #[test]
-    fn test_delta_t_boundary_conditions() {
-        // Test edge cases
-        assert!(DeltaT::estimate(-500.0).is_ok());
-        assert!(DeltaT::estimate(3000.0).is_ok());
-        assert!(DeltaT::estimate(-501.0).is_err());
-        assert!(DeltaT::estimate(3001.0).is_err()); // Should fail beyond 3000
-        assert!(DeltaT::estimate(f64::from_bits(3000.0_f64.to_bits() + 1)).is_err());
-    }
-
-    #[test]
-    fn test_delta_t_from_date() {
-        let delta_t = DeltaT::estimate_from_date(2024, 6).unwrap();
-        let delta_t_decimal = DeltaT::estimate(2024.5 - 1.0 / 24.0).unwrap(); // June = month 6, so (6-0.5)/12 ≈ 0.458
-
-        // Should be very close
-        assert!((delta_t - delta_t_decimal).abs() < 0.01);
-
-        // Test invalid month
-        assert!(DeltaT::estimate_from_date(2024, 13).is_err());
-        assert!(DeltaT::estimate_from_date(2024, 0).is_err());
-    }
-
-    #[test]
     #[cfg(feature = "chrono")]
-    fn test_delta_t_from_date_like() {
-        use chrono::{DateTime, FixedOffset, NaiveDate, Utc};
-
-        // Test with DateTime<FixedOffset>
-        let datetime_fixed = "2024-06-15T12:00:00-07:00"
-            .parse::<DateTime<FixedOffset>>()
-            .unwrap();
-        let delta_t_fixed = DeltaT::estimate_from_date_like(datetime_fixed).unwrap();
-
-        // Test with DateTime<Utc>
-        let datetime_utc = "2024-06-15T19:00:00Z".parse::<DateTime<Utc>>().unwrap();
-        let delta_t_utc = DeltaT::estimate_from_date_like(datetime_utc).unwrap();
-
-        // Test with NaiveDate
-        let naive_date = NaiveDate::from_ymd_opt(2024, 6, 15).unwrap();
-        let delta_t_naive_date = DeltaT::estimate_from_date_like(naive_date).unwrap();
-
-        // Test with NaiveDateTime
-        let naive_datetime = naive_date.and_hms_opt(12, 0, 0).unwrap();
-        let delta_t_naive_datetime = DeltaT::estimate_from_date_like(naive_datetime).unwrap();
-
-        // Should all be identical since we only use year/month
-        assert_eq!(delta_t_fixed, delta_t_utc);
-        assert_eq!(delta_t_fixed, delta_t_naive_date);
-        assert_eq!(delta_t_fixed, delta_t_naive_datetime);
-
-        // Should match estimate_from_date
-        let delta_t_date = DeltaT::estimate_from_date(2024, 6).unwrap();
-        assert_eq!(delta_t_fixed, delta_t_date);
-
-        // Verify reasonable range for 2024
-        assert!(delta_t_fixed > 60.0 && delta_t_fixed < 80.0);
-    }
-
     #[test]
-    fn test_specific_julian_dates() {
-        // Test some well-known dates
-
-        // Unix epoch: 1970-01-01 00:00:00 UTC
-        let unix_epoch = JulianDate::from_utc(1970, 1, 1, 0, 0, 0.0, 0.0).unwrap();
-        assert!((unix_epoch.julian_date() - 2_440_587.5).abs() < 1e-6);
-
-        // Y2K: 2000-01-01 00:00:00 UTC
-        let y2k = JulianDate::from_utc(2000, 1, 1, 0, 0, 0.0, 0.0).unwrap();
-        assert!((y2k.julian_date() - 2_451_544.5).abs() < 1e-6);
+    fn test_chrono_fractional_seconds_and_leap_second_rejection() {
+        use chrono::Timelike;
+        for year in [-2000, 0, 1500, 1582, 1970, 2024, 6000] {
+            let time = chrono::Utc
+                .with_ymd_and_hms(year, 2, 28, 23, 59, 59)
+                .unwrap()
+                .with_nanosecond(123_456_789)
+                .unwrap();
+            let numeric =
+                JulianDate::from_utc(year, 2, 28, 23, 59, 59.123_456_789, 69.184).unwrap();
+            let from_chrono = JulianDate::from_datetime(&time, 69.184).unwrap();
+            // The different arithmetic paths can round by one Julian-day ulp.
+            assert!((numeric.julian_date() - from_chrono.julian_date()).abs() < 1e-9);
+        }
+        let leap_second = chrono::Utc
+            .with_ymd_and_hms(2016, 12, 31, 23, 59, 59)
+            .unwrap()
+            .with_nanosecond(1_000_000_000)
+            .unwrap();
+        assert!(JulianDate::from_datetime(&leap_second, 69.184).is_err());
     }
 }

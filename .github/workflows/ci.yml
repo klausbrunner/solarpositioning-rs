@@ -35,28 +35,26 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        rust: [stable]
-        include:
-          # Test MSRV on Ubuntu only
-          - os: ubuntu-latest
-            rust: 1.70.0
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions-rust-lang/setup-rust-toolchain@v2
-        with:
-          toolchain: ${{ matrix.rust }}
-          components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - name: Run tests (skip on MSRV due to dev-dependencies)
-        if: matrix.rust == 'stable'
-        run: cargo test --all-features
-      - name: Run doc tests (skip on MSRV due to dev-dependencies)
-        if: matrix.rust == 'stable'
-        run: cargo test --doc
-      - name: Check library builds on MSRV
-        if: matrix.rust != 'stable'
-        run: cargo check --lib --all-features
+      - run: cargo test --all-features
+
+  msrv:
+    name: Minimum Rust Version
+    needs: quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
+        with:
+          toolchain: 1.85.0
+      - uses: Swatinem/rust-cache@v2
+      # Tests and benchmarks use stable; their dependencies require newer Rust.
+      - run: cargo check --lib --all-features
+      - run: cargo check --lib --no-default-features --features libm,chrono,alloc
 
   features:
     name: Feature Combinations
@@ -64,25 +62,9 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        include:
-          - features: "--no-default-features --features std"
-            test: false
-            doc_test: true
-          - features: "--no-default-features --features libm"
-            test: false
-            doc_test: true
-          - features: "--no-default-features --features 'std,chrono'"
-            test: true
-            doc_test: false
-          - features: "--no-default-features --features 'libm,chrono'"
-            test: true
-            doc_test: false
+        features: [std, libm, 'std,chrono', 'libm,chrono', 'libm,alloc', 'libm,chrono,alloc']
     steps:
       - uses: actions/checkout@v7
       - uses: actions-rust-lang/setup-rust-toolchain@v2
       - uses: Swatinem/rust-cache@v2
-      - run: cargo check ${{ matrix.features }}
-      - if: matrix.test
-        run: cargo test --lib ${{ matrix.features }}
-      - if: matrix.doc_test
-        run: cargo test --doc ${{ matrix.features }}
+      - run: cargo test --no-default-features --features '${{ matrix.features }}'

@@ -4,7 +4,8 @@
 
 use chrono::{DateTime, Utc};
 use csv::ReaderBuilder;
-use solar_positioning::{spa, RefractionCorrection};
+use solar_positioning::RefractionCorrection;
+use solar_positioning::{Location, SolarPositions};
 use std::error::Error;
 use std::fs::File;
 
@@ -28,8 +29,28 @@ fn spa_matches_nrel_reference_data() -> Result<(), Box<dyn Error>> {
         let expected_azimuth: f64 = record[3].parse()?;
         let expected_zenith: f64 = record[4].parse()?;
 
-        let position =
-            spa::solar_position(datetime, latitude, longitude, 0.0, 0.0, Some(refraction))?;
+        let position = SolarPositions::new().at(
+            &datetime,
+            Location {
+                latitude,
+                longitude,
+            },
+            0.0,
+            0.0,
+            Some(refraction),
+        )?;
+        let prepared = SolarPositions::new().for_time(&datetime, 0.0)?;
+        assert_eq!(
+            position,
+            prepared.at(
+                Location {
+                    latitude,
+                    longitude
+                },
+                0.0,
+                Some(refraction)
+            )?
+        );
         let azimuth_error = (position.azimuth() - expected_azimuth).abs();
         let zenith_error = (position.zenith_angle() - expected_zenith).abs();
 

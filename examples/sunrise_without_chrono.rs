@@ -1,66 +1,28 @@
-//! Example demonstrating sunrise/sunset calculation without the chrono library.
-//!
-//! This example shows how to use the numeric API when you don't want to depend on chrono.
-
-use solar_positioning::{spa, Horizon};
+//! Bounded event searches without chrono or heap allocation.
+use solar_positioning::{Horizon, Location, SolarEvents, time::JulianDate};
 
 fn main() -> solar_positioning::Result<()> {
-    // Calculate sunrise/sunset for San Francisco on June 21, 2023
-    // Using the numeric API - no chrono dependency required
-    let result = spa::sunrise_sunset_utc_for_horizon(
-        2023,
-        6,
-        21,
-        37.7749,   // San Francisco latitude
-        -122.4194, // San Francisco longitude
-        69.0,      // Delta T (seconds)
-        Horizon::SunriseSunset,
-    )?;
+    let calculator = SolarEvents::new();
+    let start = JulianDate::from_utc(2023, 6, 21, 0, 0, 0.0, 69.184)?.julian_date();
+    let end = start + 1.0;
+    let horizon = Horizon::SunriseSunset; // Or Horizon::Custom(-4.5).
+    let location = Location {
+        latitude: 37.7749,
+        longitude: -122.4194,
+    };
 
-    match result {
-        solar_positioning::SunriseResult::RegularDay {
-            sunrise,
-            transit,
-            sunset,
-        } => {
-            println!("San Francisco, June 21, 2023 (UTC):");
-            println!("  Sunrise:  {} hours", sunrise.hours());
-            println!("  Transit:  {} hours", transit.hours());
-            println!("  Sunset:   {} hours", sunset.hours());
-            println!();
-
-            // Show how to convert to day offset and hours
-            let (day_offset, hours) = sunrise.day_and_hours();
-            println!("Sunrise breakdown:");
-            println!("  Day offset: {}", day_offset);
-            println!("  Hours in day: {:.2}", hours);
-        }
-        solar_positioning::SunriseResult::AllDay { transit } => {
-            println!("Polar day - sun never sets");
-            println!("  Transit: {} hours", transit.hours());
-        }
-        solar_positioning::SunriseResult::AllNight { transit } => {
-            println!("Polar night - sun never rises");
-            println!("  Transit: {} hours", transit.hours());
+    let rise = calculator.next_rise_from_julian(start, end, location, 69.184, horizon)?;
+    let transit = calculator.next_transit_from_julian(start, end, location.longitude, 69.184)?;
+    let set = calculator.next_set_from_julian(start, end, location, 69.184, horizon)?;
+    for (name, event) in [("Rise", rise), ("Transit", transit), ("Set", set)] {
+        match event {
+            Some(time) => println!(
+                "{name}: {:.6} hours after midnight UTC",
+                (time - start) * 24.0
+            ),
+            None => println!("No {name} in this interval"),
         }
     }
-
-    // Example with custom elevation angle
-    println!("\nWith custom elevation angle (-1.0°):");
-    let custom_result = spa::sunrise_sunset_utc(
-        2023, 6, 21, 37.7749, -122.4194, 69.0, -1.0, // Custom elevation angle
-    )?;
-
-    if let solar_positioning::SunriseResult::RegularDay {
-        sunrise,
-        transit,
-        sunset,
-    } = custom_result
-    {
-        println!("  Sunrise:  {} hours", sunrise.hours());
-        println!("  Transit:  {} hours", transit.hours());
-        println!("  Sunset:   {} hours", sunset.hours());
-    }
-
+    // To continue, use a returned event as the next search's exclusive start.
     Ok(())
 }

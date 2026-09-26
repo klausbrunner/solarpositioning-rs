@@ -7,13 +7,13 @@ pub const PI: f64 = core::f64::consts::PI;
 
 /// Converts degrees to radians.
 #[inline]
-pub fn degrees_to_radians(degrees: f64) -> f64 {
+pub const fn degrees_to_radians(degrees: f64) -> f64 {
     degrees.to_radians()
 }
 
 /// Converts radians to degrees.
 #[inline]
-pub fn radians_to_degrees(radians: f64) -> f64 {
+pub const fn radians_to_degrees(radians: f64) -> f64 {
     radians.to_degrees()
 }
 
@@ -41,6 +41,18 @@ pub fn polynomial(coeffs: &[f64], x: f64) -> f64 {
         result = mul_add(result, x, coeff);
     }
     result
+}
+
+/// Returns the absolute value of x.
+#[inline]
+pub const fn abs(x: f64) -> f64 {
+    x.abs()
+}
+
+/// Returns x with the sign of y.
+#[inline]
+pub const fn copysign(x: f64, y: f64) -> f64 {
+    x.copysign(y)
 }
 
 /// Computes sin(x) using the appropriate function for the compilation target.

@@ -1,64 +1,33 @@
-//! Basic solar position calculation example.
+//! Solar position with a timezone-aware timestamp.
 
-use chrono::{DateTime, FixedOffset, TimeZone, Utc};
-use solar_positioning::{spa, time::DeltaT, RefractionCorrection};
+use chrono::{DateTime, FixedOffset, Utc};
+use solar_positioning::{Location, RefractionCorrection, SolarPositions, delta_t};
 
 fn main() -> solar_positioning::Result<()> {
-    // Example 1: Calculate solar position using FixedOffset timezone
-    let datetime_fixed = "2023-06-21T12:00:00-07:00"
+    let time = "2023-06-21T12:00:00-07:00"
         .parse::<DateTime<FixedOffset>>()
         .unwrap();
+    let location = Location {
+        latitude: 37.7749,
+        longitude: -122.4194,
+    }; // San Francisco
+    let delta_t = delta_t::estimate_from_date_like(time.date_naive())?;
+    let atmosphere = Some(RefractionCorrection::standard());
+    let positions = SolarPositions::new();
+    let position = positions.at(&time, location, 0.0, delta_t, atmosphere)?;
 
-    // Example 2: Same time using UTC
-    let datetime_utc = Utc.with_ymd_and_hms(2023, 6, 21, 19, 0, 0).unwrap(); // 19:00 UTC = 12:00 PDT
-    let latitude = 37.7749; // San Francisco
-    let longitude = -122.4194;
-
-    // Use estimated DeltaT for 2023
-    let delta_t = DeltaT::estimate_from_date(2023, 6)?;
-
-    // Calculate position with atmospheric refraction correction using FixedOffset
-    let position_fixed = spa::solar_position(
-        datetime_fixed,
-        latitude,
-        longitude,
-        0.0,                                             // elevation (m)
-        delta_t,                                         // deltaT (s)
-        Some(RefractionCorrection::new(1013.25, 15.0)?), // atmospheric conditions
-    )?;
-
-    // Same calculation using UTC timezone
-    let position_utc = spa::solar_position(
-        datetime_utc,
-        latitude,
-        longitude,
-        0.0,                                             // elevation (m)
-        delta_t,                                         // deltaT (s)
-        Some(RefractionCorrection::new(1013.25, 15.0)?), // atmospheric conditions
-    )?;
-
-    println!("Solar position for San Francisco on June 21, 2023 at noon Pacific Time:");
-    println!("Using FixedOffset timezone:");
-    println!("  Azimuth: {:.3}°", position_fixed.azimuth());
-    println!("  Elevation: {:.3}°", position_fixed.elevation_angle());
-    println!("  Zenith angle: {:.3}°", position_fixed.zenith_angle());
-
-    println!("\nUsing UTC timezone (same moment):");
-    println!("  Azimuth: {:.3}°", position_utc.azimuth());
-    println!("  Elevation: {:.3}°", position_utc.elevation_angle());
-    println!("  Zenith angle: {:.3}°", position_utc.zenith_angle());
-
-    println!(
-        "\nBoth calculations produce identical results: {}",
-        position_fixed.azimuth() == position_utc.azimuth()
-            && position_fixed.elevation_angle() == position_utc.elevation_angle()
+    println!("San Francisco at {time}:");
+    println!("Azimuth: {:.3}°", position.azimuth());
+    println!("Elevation: {:.3}°", position.elevation_angle());
+    assert_eq!(
+        position,
+        positions.at(
+            &time.with_timezone(&Utc),
+            location,
+            0.0,
+            delta_t,
+            atmosphere
+        )?
     );
-
-    if position_fixed.is_sun_up() {
-        println!("  Sun is above the horizon");
-    } else {
-        println!("  Sun is below the horizon");
-    }
-
     Ok(())
 }

@@ -6,6 +6,7 @@
 
 ### Changed
 
+- **BREAKING**: `for_time_from_julian` now returns `Result`; `estimate_from_date_like` borrows its input.
 - **BREAKING**: Replace position and sunrise/sunset APIs with `SolarPositions`, `PreparedPositions`, `SolarEvents` and `Events<T>`. Public types are exported at the crate root.
 - Events use precise SPA, Grena3 or custom positions and support missing or multiple events per day. The standard sunrise horizon is −50/60°.
 - **BREAKING**: Replace `time::DeltaT` with `delta_t` functions. Make `Error` non-exhaustive, with `core::error::Error` support also without `std`.
@@ -15,6 +16,7 @@
 
 ### Fixed
 
+- Enforce position models' UT/TT date ranges and preserve exact chrono boundaries in event validation.
 - Remove Grena3's rounded-hours artifact by using continuous Julian time.
 - Prevent SPA roundoff errors at zenith and nadir.
 - Reject refraction temperatures at or below −273°C.

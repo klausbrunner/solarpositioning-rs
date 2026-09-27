@@ -1,5 +1,6 @@
 use solar_positioning::{
-    Error, Location, PreparedPositions, RefractionCorrection, SolarPositions, time::JulianDate,
+    Error, Location, PreparedPositions, RefractionCorrection, SolarEvents, SolarPositions,
+    time::JulianDate,
 };
 
 const LOCATION: Location = Location {
@@ -18,10 +19,10 @@ fn prepared_positions_match_single_calls_and_remain_independent() {
     ] {
         for month in [1, 3, 6, 9, 12] {
             let time = JulianDate::from_utc(2024, month, 21, 12, 30, 12.5, 69.184).unwrap();
-            let prepared = positions.for_time_from_julian(time);
+            let prepared = positions.for_time_from_julian(time).unwrap();
             let original = prepared.at(LOCATION, height, None).unwrap();
             let later = JulianDate::new(time.julian_date() + 0.25, time.delta_t() + 1.0).unwrap();
-            let other = positions.for_time_from_julian(later);
+            let other = positions.for_time_from_julian(later).unwrap();
             assert_eq!(
                 other.at(LOCATION, height, None),
                 positions.at_from_julian(later, LOCATION, height, None)
@@ -118,7 +119,7 @@ fn spa_handles_zenith_and_nadir_roundoff() {
 fn rejects_invalid_coordinates_and_heights() {
     let time = JulianDate::from_utc(2024, 6, 21, 12, 0, 0.0, 69.0).unwrap();
     for positions in [SolarPositions::new(), SolarPositions::grena3()] {
-        let prepared = positions.for_time_from_julian(time);
+        let prepared = positions.for_time_from_julian(time).unwrap();
         for location in [
             Location {
                 latitude: 91.0,
@@ -226,6 +227,93 @@ fn chrono_matches_numeric_time_across_offsets_and_year_boundaries() {
                         .is_err()
                 );
             }
+        }
+    }
+}
+
+#[test]
+fn numeric_positions_and_events_respect_model_date_ranges() {
+    for (positions, events, first_year, last_year) in [
+        (SolarPositions::new(), SolarEvents::new(), -2000, 6000),
+        (SolarPositions::grena3(), SolarEvents::grena3(), 2010, 2110),
+    ] {
+        let start = JulianDate::from_utc(first_year, 1, 1, 0, 0, 0.0, 0.0)
+            .unwrap()
+            .julian_date();
+        let end = JulianDate::from_utc(last_year + 1, 1, 1, 0, 0, 0.0, 0.0)
+            .unwrap()
+            .julian_date();
+        for (jd, delta_t, valid) in [
+            (start, 0.0, true),
+            (end, 0.0, true),
+            (start - 1.0, 86400.0, false), // UT outside, TT inside.
+            (end + 1.0, -86400.0, false),
+            (start, -1.0, false), // UT inside, TT outside.
+            (end, 1.0, false),
+            (start + 0.5, -43200.0, true), // Exactly representable TT boundaries.
+            (end - 0.5, 43200.0, true),
+        ] {
+            let time = JulianDate::new(jd, delta_t).unwrap();
+            assert_eq!(positions.for_time_from_julian(time).is_ok(), valid);
+            assert_eq!(
+                positions.at_from_julian(time, LOCATION, 0.0, None).is_ok(),
+                valid
+            );
+            assert_eq!(
+                events
+                    .next_transit_from_julian(jd, jd, 0.0, delta_t)
+                    .is_ok(),
+                valid
+            );
+        }
+    }
+}
+
+#[cfg(feature = "chrono")]
+#[test]
+fn chrono_positions_and_events_preserve_exact_ut_and_tt_boundaries() {
+    use chrono::{Duration, FixedOffset, NaiveDate};
+    for (positions, events, first_year, last_year) in [
+        (SolarPositions::new(), SolarEvents::new(), -2000, 6000),
+        (SolarPositions::grena3(), SolarEvents::grena3(), 2010, 2110),
+    ] {
+        let start = NaiveDate::from_ymd_opt(first_year, 1, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc();
+        let end = NaiveDate::from_ymd_opt(last_year + 1, 1, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc();
+        for (time, delta_t, valid) in [
+            (start, 0.0, true),
+            (end, 0.0, true),
+            (start - Duration::nanoseconds(1), 1.0, false),
+            (end + Duration::nanoseconds(1), -1.0, false),
+            (start, -1.0, false),
+            (end, 1.0, false),
+            (start + Duration::seconds(1), -1.0, true),
+            (end - Duration::seconds(1), 1.0, true),
+            (start + Duration::nanoseconds(999_999_999), -1.0, false),
+            (end - Duration::nanoseconds(999_999_999), 1.0, false),
+        ] {
+            // A local year may differ from UT; validation must use the instant.
+            let zoned = time.with_timezone(&FixedOffset::west_opt(3600).unwrap());
+            assert_eq!(
+                positions.for_time(&zoned, delta_t).is_ok(),
+                valid,
+                "{time}, delta_t={delta_t}"
+            );
+            assert_eq!(
+                positions.at(&zoned, LOCATION, 0.0, delta_t, None).is_ok(),
+                valid
+            );
+            assert_eq!(
+                events.next_transit(&zoned, &zoned, 0.0, delta_t).is_ok(),
+                valid
+            );
         }
     }
 }

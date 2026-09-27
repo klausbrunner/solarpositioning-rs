@@ -66,7 +66,9 @@ The returned `PreparedPositions` owns its cached values and can outlive the calc
 and timestamp. Both models support this API. Calculators and prepared values are
 `Copy`, `Send` and `Sync`, with no heap allocation.
 
-Calendar constructors use the proleptic Gregorian calendar, including before 1582.
+Both UT and TT must stay within the model's supported years: −2000 through 6000 for SPA,
+2010 through 2110 for Grena3. Calendar constructors use the proleptic Gregorian calendar,
+including before 1582.
 Without chrono, both models accept a `JulianDate`, which includes delta T:
 
 ```rust
@@ -76,7 +78,7 @@ let time = JulianDate::from_utc(2025, 6, 21, 12, 0, 0.0, 69.0)?;
 let location = Location { latitude: 48.21, longitude: 16.37 };
 let positions = SolarPositions::new();
 let position = positions.at_from_julian(time, location, 190.0, None)?;
-let prepared = positions.for_time_from_julian(time);
+let prepared = positions.for_time_from_julian(time)?;
 ```
 
 `SolarEvents` finds all events in a local calendar date:
@@ -91,7 +93,7 @@ let location = Location { latitude: 48.21, longitude: 16.37 };
 let calculator = SolarEvents::new();
 let day = calculator.for_date(
     date, &zone, location,
-    delta_t::estimate_from_date_like(date)?, Horizon::SunriseSunset,
+    delta_t::estimate_from_date_like(&date)?, Horizon::SunriseSunset,
 )?;
 println!("Sunrises: {:?}", day.rises);
 println!("Transits: {:?}", day.transits);
@@ -186,7 +188,7 @@ Delta T (ΔT) is the difference between terrestrial time and UT1 ([Wikipedia](<h
 
 `delta_t::estimate(decimal_year)` returns an estimate in seconds. Use
 `delta_t::estimate_from_date(year, month)` for a calendar month, or
-`delta_t::estimate_from_date_like(date)` with chrono dates.
+`delta_t::estimate_from_date_like(&date)` with chrono dates.
 
 The estimates use polynomials originally published by [Espenak and Meeus](http://eclipse.gsfc.nasa.gov/SEcat5/deltatpoly.html) and [updated by Espenak in 2014](https://www.eclipsewise.com/help/deltatpoly2014.html), with custom replacement branches from 2015 onwards.
 The [derivation and comparisons](https://klaus.brunners.name/posts/delta-t-polynomials/) describe the fit and its

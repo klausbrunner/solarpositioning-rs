@@ -16,7 +16,7 @@
 
 use crate::error::{check_coordinates, check_elevation_angle};
 use crate::math::{abs, copysign, cos, sin};
-use crate::time::JulianDate;
+use crate::time::{JulianDate, TimeRange};
 use crate::{Error, Horizon, Location, Result, grena3, spa};
 use core::ops::RangeInclusive;
 
@@ -50,8 +50,7 @@ pub type PositionFn = fn(JulianDate, Location) -> Result<EventPosition>;
 #[derive(Debug, Clone, Copy)]
 pub struct SolarEvents<P = PositionFn> {
     provider: P,
-    min_time: f64,
-    max_time: f64,
+    range: TimeRange,
 }
 
 impl SolarEvents {
@@ -60,8 +59,7 @@ impl SolarEvents {
     pub fn new() -> Self {
         Self {
             provider: spa::event_position,
-            min_time: year_start(-2000),
-            max_time: year_start(6001),
+            range: TimeRange::SPA,
         }
     }
 
@@ -70,8 +68,7 @@ impl SolarEvents {
     pub fn grena3() -> Self {
         Self {
             provider: grena3::event_position,
-            min_time: year_start(2010),
-            max_time: year_start(2111),
+            range: TimeRange::GRENA3,
         }
     }
 }
@@ -104,8 +101,7 @@ where
         }
         Ok(Self {
             provider,
-            min_time: year_start(*years.start()),
-            max_time: year_start(*years.end() + 1),
+            range: TimeRange::new(*years.start(), *years.end()),
         })
     }
 
@@ -266,10 +262,7 @@ where
             return Err(invalid_time("invalid search interval or delta_t"));
         }
         for time in [start, end] {
-            let tt = time.julian_day() + delta_t / 86400.0;
-            if !time.in_range(self.min_time, self.max_time)
-                || !(self.min_time..=self.max_time).contains(&tt)
-            {
+            if !time.in_range(self.range, delta_t) {
                 return Err(invalid_time(
                     "search interval outside provider's supported years",
                 ));
@@ -418,19 +411,13 @@ const fn invalid_time(message: &'static str) -> Error {
     Error::InvalidDateTime { message }
 }
 
-// Proleptic Gregorian January 1, including astronomical year zero.
-fn year_start(year: i32) -> f64 {
-    let y = year - 1;
-    1_721_425.5 + f64::from(365 * y + y.div_euclid(4) - y.div_euclid(100) + y.div_euclid(400))
-}
-
 // Keep both numeric and chrono searches on the same algorithm, while evaluating
 // the exact representation returned to their respective callers.
 trait SearchTime: Copy + PartialOrd {
     fn julian_day(self) -> f64;
     fn hours_until(self, end: Self) -> f64;
     fn shift_hours(self, hours: f64) -> Self;
-    fn in_range(self, min: f64, max: f64) -> bool;
+    fn in_range(self, range: TimeRange, delta_t: f64) -> bool;
 
     fn at(self, end: Self, hours: f64, duration_hours: f64) -> Self {
         // Preserve the inclusive endpoint exactly through the floating-point round trip.
@@ -452,8 +439,8 @@ impl SearchTime for f64 {
     fn shift_hours(self, hours: f64) -> Self {
         self + hours / 24.0
     }
-    fn in_range(self, min: f64, max: f64) -> bool {
-        (min..=max).contains(&self)
+    fn in_range(self, range: TimeRange, delta_t: f64) -> bool {
+        range.contains_julian(self, delta_t)
     }
 }
 

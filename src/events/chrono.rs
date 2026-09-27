@@ -3,7 +3,7 @@ use super::invalid_time;
 use super::{EventPosition, SearchTime, SolarEvents};
 use crate::{
     Horizon, Location, Result,
-    time::{JulianDate, datetime_to_julian},
+    time::{JulianDate, TimeRange, datetime_to_julian},
 };
 use ::chrono::{DateTime, Duration, TimeZone, Utc};
 #[cfg(feature = "alloc")]
@@ -185,13 +185,8 @@ impl SearchTime for DateTime<Utc> {
             + Duration::nanoseconds(((seconds - whole_seconds as f64) * 1e9) as i64)
     }
 
-    fn in_range(self, min: f64, max: f64) -> bool {
-        let min_seconds = ((min - 2_440_587.5) * 86400.0) as i64;
-        let max_seconds = ((max - 2_440_587.5) * 86400.0) as i64;
-        self.timestamp_subsec_nanos() < 1_000_000_000
-            && self.timestamp() >= min_seconds
-            && (self.timestamp() < max_seconds
-                || (self.timestamp() == max_seconds && self.timestamp_subsec_nanos() == 0))
+    fn in_range(self, range: TimeRange, delta_t: f64) -> bool {
+        range.contains_datetime(&self, delta_t)
     }
 }
 

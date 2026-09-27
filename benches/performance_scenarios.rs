@@ -174,7 +174,7 @@ fn benchmark_preparation(c: &mut Criterion) {
     let time = JulianDate::from_utc(2023, 6, 21, 12, 0, 0.0, 69.0).unwrap();
     for (name, positions) in MODELS {
         group.bench_function(name, |b| {
-            b.iter(|| positions.for_time_from_julian(black_box(time)))
+            b.iter(|| positions.for_time_from_julian(black_box(time)).unwrap())
         });
     }
     group.finish();

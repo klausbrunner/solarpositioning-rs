@@ -32,7 +32,7 @@ fn main() -> solar_positioning::Result<()> {
         ("SPA", SolarPositions::new()),
         ("Grena3", SolarPositions::grena3()),
     ] {
-        let prepared = positions.for_time_from_julian(time);
+        let prepared = positions.for_time_from_julian(time)?;
         for (city, location) in locations {
             let position = prepared.at(location, 0.0, atmosphere)?;
             println!(

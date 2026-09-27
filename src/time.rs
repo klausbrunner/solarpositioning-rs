@@ -19,6 +19,59 @@ const J2000_JDN: f64 = 2_451_545.0;
 /// Days per Julian century
 const DAYS_PER_CENTURY: f64 = 36_525.0;
 
+/// Inclusive UT and TT limits shared by positions and events.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct TimeRange {
+    start: f64,
+    end: f64,
+}
+
+impl TimeRange {
+    pub(crate) const SPA: Self = Self::new(-2000, 6000);
+    pub(crate) const GRENA3: Self = Self::new(2010, 2110);
+
+    pub(crate) const fn new(first_year: i32, last_year: i32) -> Self {
+        Self {
+            start: year_start(first_year),
+            end: year_start(last_year + 1),
+        }
+    }
+
+    pub(crate) fn contains_julian(self, time: f64, delta_t: f64) -> bool {
+        (self.start..=self.end).contains(&time)
+            && (self.start..=self.end).contains(&(time + delta_t / SECONDS_PER_DAY))
+    }
+
+    #[cfg(feature = "chrono")]
+    pub(crate) fn contains_datetime<Tz: TimeZone>(
+        self,
+        time: &chrono::DateTime<Tz>,
+        delta_t: f64,
+    ) -> bool {
+        use chrono::Duration;
+        if time.timestamp_subsec_nanos() >= 1_000_000_000 {
+            return false;
+        }
+        let start = ((self.start - 2_440_587.5) * SECONDS_PER_DAY) as i64;
+        let end = ((self.end - 2_440_587.5) * SECONDS_PER_DAY) as i64;
+        let fraction = Duration::nanoseconds(i64::from(time.timestamp_subsec_nanos()));
+        let elapsed = Duration::seconds(time.timestamp() - start) + fraction;
+        let remaining = Duration::seconds(end - time.timestamp()) - fraction;
+        // Compare durations to delta T before converting to Julian days, preserving boundaries.
+        let seconds = |d: Duration| d.num_seconds() as f64 + f64::from(d.subsec_nanos()) / 1e9;
+        elapsed >= Duration::zero()
+            && remaining >= Duration::zero()
+            && delta_t >= -seconds(elapsed)
+            && delta_t <= seconds(remaining)
+    }
+}
+
+// Proleptic Gregorian January 1, including astronomical year zero.
+const fn year_start(year: i32) -> f64 {
+    let y = year - 1;
+    1_721_425.5 + (365 * y + y.div_euclid(4) - y.div_euclid(100) + y.div_euclid(400)) as f64
+}
+
 /// Validates UTC date/time components against both field ranges and the calendar.
 fn validate_utc_components(
     year: i32,

@@ -1,7 +1,8 @@
 //! Solar positions and reusable calculations for a fixed time.
 
 use crate::{
-    Error, Location, RefractionCorrection, Result, SolarPosition, grena3, spa, time::JulianDate,
+    Error, Location, RefractionCorrection, Result, SolarPosition, grena3, spa,
+    time::{JulianDate, TimeRange},
 };
 #[cfg(feature = "chrono")]
 use chrono::{DateTime, TimeZone};
@@ -12,7 +13,8 @@ use chrono::{DateTime, TimeZone};
 /// zero height. Pass `None` for an unrefracted position, or `Some` atmospheric
 /// conditions to apply the selected model's refraction correction.
 ///
-/// SPA is designed for years -2000 through 6000, and Grena3 for 2010 through 2110.
+/// SPA supports years -2000 through 6000, and Grena3 supports 2010 through 2110.
+/// Both UT and TT must remain within the selected model's range.
 /// Instances are immutable, `Send` and `Sync`, and require no allocation.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SolarPositions {
@@ -24,6 +26,15 @@ enum Model {
     #[default]
     Spa,
     Grena3,
+}
+
+impl Model {
+    const fn range(self) -> TimeRange {
+        match self {
+            Self::Spa => TimeRange::SPA,
+            Self::Grena3 => TimeRange::GRENA3,
+        }
+    }
 }
 
 impl SolarPositions {
@@ -49,7 +60,8 @@ impl SolarPositions {
     ///
     /// # Errors
     /// Returns an error for an invalid timestamp, non-finite delta T or height,
-    /// invalid coordinates, nonzero height with Grena3, or a non-finite result.
+    /// invalid coordinates, nonzero height with Grena3, a time outside the model's
+    /// UT/TT range, or a non-finite result.
     #[cfg(feature = "chrono")]
     #[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
     #[inline]
@@ -71,7 +83,7 @@ impl SolarPositions {
     ///
     /// # Errors
     /// Returns an error for invalid coordinates, non-finite height, nonzero height
-    /// with Grena3, or a non-finite result.
+    /// with Grena3, a time outside the model's UT/TT range, or a non-finite result.
     #[inline]
     pub fn at_from_julian(
         &self,
@@ -80,7 +92,7 @@ impl SolarPositions {
         height: f64,
         refraction: Option<RefractionCorrection>,
     ) -> Result<SolarPosition> {
-        self.for_time_from_julian(time)
+        self.for_time_from_julian(time)?
             .at(location, height, refraction)
     }
 
@@ -90,7 +102,8 @@ impl SolarPositions {
     /// does not borrow the timestamp or calculator.
     ///
     /// # Errors
-    /// Returns an error for an invalid timestamp or non-finite delta T.
+    /// Returns an error for an invalid timestamp, non-finite delta T, or a time
+    /// outside the model's UT/TT range.
     #[cfg(feature = "chrono")]
     #[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
     #[inline]
@@ -99,15 +112,36 @@ impl SolarPositions {
         time: &DateTime<Tz>,
         delta_t: f64,
     ) -> Result<PreparedPositions> {
-        Ok(self.for_time_from_julian(JulianDate::from_datetime(time, delta_t)?))
+        let julian = JulianDate::from_datetime(time, delta_t)?;
+        if !self.model.range().contains_datetime(time, delta_t) {
+            return Err(Error::InvalidDateTime {
+                message: "time outside model's supported years",
+            });
+        }
+        Ok(self.prepare(julian))
     }
 
     /// Prepares calculations from continuous UT Julian time, which includes delta T.
     ///
     /// This method needs neither chrono nor allocation.
-    #[must_use]
+    ///
+    /// # Errors
+    /// Returns an error if UT or TT is outside the selected model's supported years.
     #[inline]
-    pub fn for_time_from_julian(&self, time: JulianDate) -> PreparedPositions {
+    pub fn for_time_from_julian(&self, time: JulianDate) -> Result<PreparedPositions> {
+        if !self
+            .model
+            .range()
+            .contains_julian(time.julian_date(), time.delta_t())
+        {
+            return Err(Error::InvalidDateTime {
+                message: "time outside model's supported years",
+            });
+        }
+        Ok(self.prepare(time))
+    }
+
+    fn prepare(self, time: JulianDate) -> PreparedPositions {
         let model = match self.model {
             Model::Spa => PreparedModel::Spa(spa::time_dependent(time)),
             Model::Grena3 => PreparedModel::Grena3(grena3::time_dependent(time)),

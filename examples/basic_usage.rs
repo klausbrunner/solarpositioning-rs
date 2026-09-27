@@ -11,7 +11,7 @@ fn main() -> solar_positioning::Result<()> {
         latitude: 37.7749,
         longitude: -122.4194,
     }; // San Francisco
-    let delta_t = delta_t::estimate_from_date_like(time.date_naive())?;
+    let delta_t = delta_t::estimate_from_date_like(&time.date_naive())?;
     let atmosphere = Some(RefractionCorrection::standard());
     let positions = SolarPositions::new();
     let position = positions.at(&time, location, 0.0, delta_t, atmosphere)?;

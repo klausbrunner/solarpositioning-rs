@@ -83,7 +83,7 @@
 //! let location = Location { latitude: 48.21, longitude: 16.37 };
 //! let positions = SolarPositions::new();
 //! let position = positions.at_from_julian(time, location, 190.0, None)?;
-//! let prepared = positions.for_time_from_julian(time);
+//! let prepared = positions.for_time_from_julian(time)?;
 //! assert_eq!(position, prepared.at(location, 190.0, None)?);
 //! # Ok::<(), solar_positioning::Error>(())
 //! ```

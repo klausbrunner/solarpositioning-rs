@@ -9,7 +9,7 @@ fn main() -> solar_positioning::Result<()> {
         latitude: 37.7749,
         longitude: -122.4194,
     };
-    let delta_t = delta_t::estimate_from_date_like(time.date_naive())?;
+    let delta_t = delta_t::estimate_from_date_like(&time.date_naive())?;
     for (name, positions) in [
         ("SPA", SolarPositions::new()),
         ("Grena3", SolarPositions::grena3()),

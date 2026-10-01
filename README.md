@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/klausbrunner/solarpositioning-rs/workflows/CI/badge.svg)](https://github.com/klausbrunner/solarpositioning-rs/actions/workflows/ci.yml) [![Crates.io](https://img.shields.io/crates/v/solar-positioning?color=dodgerblue)](https://crates.io/crates/solar-positioning) [![docs.rs](https://img.shields.io/docsrs/solar-positioning)](https://docs.rs/solar-positioning)
 
-A Rust library for finding topocentric solar coordinates, i.e. the sun's position on the sky for a given date, latitude, and longitude (and other parameters), as well as times of sunrise, sunset and twilight. Position calculations follow well-known, peer-reviewed algorithms: [SPA](https://doi.org/10.1016/j.solener.2003.12.003) by Reda and Andreas and, alternatively, [Grena/ENEA](https://doi.org/10.1016/j.solener.2012.01.024) by Grena. More than 1000 test points are included to validate against the reference code and other sources. Solar events are found by searching positions from the chosen algorithm, with SPA as the default.
+A Rust library for finding topocentric solar coordinates, i.e. the sun's position on the sky for a given date, latitude, and longitude (and other parameters), as well as times of sunrise, sunset and twilight. Position calculations follow well-known, peer-reviewed algorithms: [SPA](https://doi.org/10.1016/j.solener.2003.12.003) by Reda and Andreas and, alternatively, [Grena/ENEA](https://doi.org/10.1016/j.solener.2012.01.024) by Grena. More than 1000 test points are included to validate against the reference code and other sources. Solar events are found by searching positions from the chosen algorithm.
 
 > [!NOTE]
 > This library is **not** based on or derived from any code published by NREL, ENEA or other parties. It implements the position algorithms as described in the respective papers.
@@ -165,11 +165,10 @@ geometric horizon, allowing for average refraction and the Sun's apparent radius
 Twilight and custom horizons use their selected angle without adding refraction.
 
 Crossing brackets and date assignment have one-millisecond resolution. This is
-numerical precision, not observed-event accuracy: shallow crossings amplify the
+numerical precision, not real-life accuracy: shallow crossings amplify the
 position model's angular uncertainty, and weather, observer elevation and terrain
 can shift observed sunrise by minutes ([USNO](https://aa.usno.navy.mil/faq/RST_defs)).
-A tangency is not a crossing, and events less than one millisecond apart need not
-be distinguished. Transit is upper meridian passage, not necessarily maximum elevation.
+Transit is upper meridian passage, not necessarily maximum elevation.
 
 Event searches use continuous time. Both UT and TT must stay within the model's
 supported years (-2000 through 6000 for SPA, 2010 through 2110 for Grena3).
@@ -179,8 +178,6 @@ The search combines interval subdivision, [interpolation error bounds](https://d
 and [ITP refinement](https://doi.org/10.1145/3423597). Its conservative curvature estimate
 accounts for daily rotation and slower solar motion. It is checked against reference data,
 not formally guaranteed for every input.
-[Astronomy Engine](https://github.com/cosinekitty/astronomy/blob/master/source/js/astronomy.ts)
-uses related adaptive-search ideas with a speed bound instead of curvature.
 
 ### Delta T
 

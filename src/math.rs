@@ -17,9 +17,19 @@ pub const fn radians_to_degrees(radians: f64) -> f64 {
     radians.to_degrees()
 }
 
-/// Computes the Euclidean remainder for floating point values.
+/// Computes the Euclidean remainder, mapping a rounded upper boundary to zero.
 pub fn rem_euclid(x: f64, modulus: f64) -> f64 {
-    mul_add(modulus, -floor(x / modulus), x)
+    let remainder = x % modulus;
+    let positive = if remainder < 0.0 {
+        remainder + abs(modulus)
+    } else {
+        remainder
+    };
+    if positive == abs(modulus) {
+        0.0
+    } else {
+        positive
+    }
 }
 
 /// Normalizes an angle in degrees to the range [0, 360).

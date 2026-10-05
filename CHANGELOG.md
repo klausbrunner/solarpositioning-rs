@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Fixed
+
+- Keep normalized azimuths in [0°, 360°), including extreme finite inputs.
+- Fix missed shallow crossings at subdivision points.
+
 ## [0.7.0] - 2026-09-26
 
 ### Changed

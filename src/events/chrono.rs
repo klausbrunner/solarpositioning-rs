@@ -86,6 +86,7 @@ where
     ///
     /// Handles daylight-saving changes, repeated dates and skipped dates. Returned
     /// times use `zone`. Pass [`Horizon::SunriseSunset`] for standard rise/set times.
+    /// Historical rollbacks that split a local date into separate intervals are not supported.
     ///
     /// # Errors
     /// Has the same validation and provider errors as [`Self::next_rise_from_julian`].

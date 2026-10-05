@@ -473,8 +473,14 @@ impl<F: Fn(f64) -> Result<f64>> CrossingSearch<F> {
         if width <= TIME_TOLERANCE {
             return Ok((a < 0.0 && b > 0.0).then_some(end));
         }
-        let middle = start + width / 2.0;
-        let m = self.value(middle)?;
+        let mut middle = start + width / 2.0;
+        let mut m = self.value(middle)?;
+        // Keep a shallow crossing inside a bracket instead of splitting at zero.
+        // Stay strictly inside the interval so both recursive searches progress.
+        if m == 0.0 && (a != 0.0 || b != 0.0) {
+            middle += TIME_TOLERANCE.min(width / 4.0);
+            m = self.value(middle)?;
+        }
         if let Some(left) = self.find(start, middle, a, m)? {
             return Ok(Some(left));
         }

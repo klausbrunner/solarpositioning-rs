@@ -104,6 +104,7 @@ println!("Continuous daylight: {}", day.always_above());
 Each list can be empty or contain several events. Times use the requested zone and
 lie within the date, including its start and excluding the following date. Pass an
 IANA zone from `chrono-tz` for daylight-saving rules, repeated dates and skipped dates.
+Historical rollbacks that split a local date into separate intervals are not supported.
 `state_at_start` describes the Sun relative to the horizon, including `OnHorizon`
 within the numerical rounding allowance. `always_above()` and `always_below()` are
 false for an empty date.

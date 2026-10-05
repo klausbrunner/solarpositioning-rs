@@ -57,6 +57,71 @@ fn finds_known_crossings_and_rejects_tangencies() {
 }
 
 #[test]
+fn preserves_shallow_crossings_at_subdivision_points() {
+    let root = 2_460_390.0;
+    for direction in [-1.0, 1.0] {
+        let calculator = SolarEvents::with_provider(
+            move |time: JulianDate, _: Location| {
+                let phase = std::f64::consts::TAU * (time.julian_date() - root);
+                Ok(EventPosition {
+                    elevation: (direction * 1e-4 * phase.sin()).asin().to_degrees(),
+                    hour_angle: phase.to_degrees(),
+                })
+            },
+            2024..=2024,
+        )
+        .unwrap();
+        let search = |start, end| {
+            if direction > 0.0 {
+                calculator.next_rise_from_julian(start, end, ORIGIN, 0.0, Horizon::Custom(0.0))
+            } else {
+                calculator.next_set_from_julian(start, end, ORIGIN, 0.0, Horizon::Custom(0.0))
+            }
+        };
+        for seconds in [1.0, 10.0, 60.0] {
+            let start = root - seconds / 86400.0;
+            let end = root + seconds / 86400.0;
+            let event = search(start, end).unwrap().unwrap();
+            assert!((event - root).abs() * 86400.0 < 0.0011);
+            assert!(search(event, end).unwrap().is_none());
+        }
+    }
+}
+
+#[test]
+fn grena_preserves_shallow_polar_crossing_in_short_windows() {
+    let root = 2_460_483.0; // 2024-06-21 noon UT, near the solstice.
+    let location = Location {
+        latitude: -90.0,
+        longitude: 0.0,
+    };
+    let elevation = |time| {
+        SolarPositions::grena3()
+            .at_from_julian(JulianDate::new(time, 0.0).unwrap(), location, 0.0, None)
+            .unwrap()
+            .elevation_angle()
+    };
+    let horizon = elevation(root);
+    for seconds in [1.0, 10.0, 60.0, 3600.0] {
+        let start = root - seconds / 86400.0;
+        let end = root + seconds / 86400.0;
+        assert!(elevation(start) < horizon && elevation(end) > horizon);
+        let calculator = SolarEvents::grena3();
+        let rise = calculator
+            .next_rise_from_julian(start, end, location, 0.0, Horizon::Custom(horizon))
+            .unwrap()
+            .unwrap();
+        assert!((rise - root).abs() * 86400.0 < 0.0011);
+        assert!(
+            calculator
+                .next_rise_from_julian(rise, end, location, 0.0, Horizon::Custom(horizon))
+                .unwrap()
+                .is_none()
+        );
+    }
+}
+
+#[test]
 fn preserves_bounds_and_does_not_repeat_returned_events() {
     let calculator = SolarEvents::new();
     let (start, end) = (2_460_389.5, 2_460_390.5);

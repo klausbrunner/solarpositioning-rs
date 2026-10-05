@@ -220,6 +220,22 @@ mod tests {
     }
 
     #[test]
+    fn test_azimuth_normalization_extremes() {
+        for (azimuth, expected) in [
+            (1e20, 280.0),
+            (-1e20, 80.0),
+            (f64::MAX, 128.0),
+            (-f64::MAX, 232.0),
+            (-1e-20, 0.0),
+            (-f64::from_bits(1), 0.0),
+        ] {
+            let position = SolarPosition::new(azimuth, 90.0).unwrap();
+            assert_eq!(position.azimuth(), expected, "azimuth {azimuth}");
+            assert!((0.0..360.0).contains(&position.azimuth()));
+        }
+    }
+
+    #[test]
     fn test_solar_position_creation() {
         let pos = SolarPosition::new(180.0, 45.0).unwrap();
         assert_eq!(pos.azimuth(), 180.0);

@@ -1,6 +1,8 @@
 use chrono::{DateTime, Duration, Utc};
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use solar_positioning::{Location, RefractionCorrection, SolarPositions, time::JulianDate};
+use solar_positioning::{
+    ElevationTarget, Location, RefractionCorrection, SolarPositions, time::JulianDate,
+};
 use std::hint::black_box;
 
 const MODELS: [(&str, SolarPositions); 2] = [
@@ -208,12 +210,41 @@ fn benchmark_mixed_coordinates_and_times(c: &mut Criterion) {
     group.finish();
 }
 
+fn benchmark_elevation_crossings(c: &mut Criterion) {
+    let mut group = c.benchmark_group("elevation_crossings");
+    for (name, positions) in MODELS {
+        for (kind, refraction) in [("geometric", None), ("apparent", REFRACTION)] {
+            let target = ElevationTarget {
+                angle: 10.0,
+                height: 0.0,
+                refraction,
+            };
+            group.bench_function(BenchmarkId::new(name, kind), |b| {
+                b.iter(|| {
+                    positions
+                        .next_elevation_rise_from_julian(
+                            black_box(2_460_389.5),
+                            black_box(2_460_390.5),
+                            black_box(LOCATION),
+                            black_box(69.184),
+                            black_box(target),
+                        )
+                        .unwrap()
+                        .unwrap()
+                });
+            });
+        }
+    }
+    group.finish();
+}
+
 criterion_group!(
     benches,
     benchmark_single_calculation,
     benchmark_time_series_fixed_location,
     benchmark_coordinate_sweep_fixed_time,
     benchmark_solar_events_multiple,
+    benchmark_elevation_crossings,
     benchmark_preparation,
     benchmark_mixed_coordinates_and_times
 );

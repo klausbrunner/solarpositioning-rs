@@ -7,6 +7,8 @@ use crate::{
 #[cfg(feature = "chrono")]
 use chrono::{DateTime, TimeZone};
 
+mod elevation;
+
 /// A reusable solar-position calculator, using SPA by default.
 ///
 /// Height is in metres above sea level; use zero for sea level. Grena3 requires

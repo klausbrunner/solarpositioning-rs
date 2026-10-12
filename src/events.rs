@@ -32,7 +32,7 @@ const ROUNDING_ERROR: f64 = 1e-8;
 /// Coordinates needed by the event search, in degrees.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EventPosition {
-    /// Unrefracted topocentric solar-centre elevation at sea level.
+    /// Unrefracted topocentric solar-centre elevation.
     pub elevation: f64,
     /// Geocentric local hour angle, positive west; any full-turn wrapping is accepted.
     pub hour_angle: f64,
@@ -99,10 +99,14 @@ where
         if years.is_empty() || *years.start() < -2000 || *years.end() > 6000 {
             return Err(invalid_time("invalid provider year range"));
         }
-        Ok(Self {
+        Ok(Self::with_range(
             provider,
-            range: TimeRange::new(*years.start(), *years.end()),
-        })
+            TimeRange::new(*years.start(), *years.end()),
+        ))
+    }
+
+    pub(crate) const fn with_range(provider: P, range: TimeRange) -> Self {
+        Self { provider, range }
     }
 
     /// Finds the next rising crossing in `(start, end]`, using UT Julian dates.
@@ -190,7 +194,7 @@ where
     }
 
     #[allow(clippy::suboptimal_flops)]
-    fn crossing<T: SearchTime>(
+    pub(crate) fn crossing<T: SearchTime>(
         &self,
         start: T,
         end: T,
@@ -257,7 +261,12 @@ where
         Ok(crossing.map(|t| start.at(end, t, hours)))
     }
 
-    fn check_interval<T: SearchTime>(&self, start: T, end: T, delta_t: f64) -> Result<()> {
+    pub(crate) fn check_interval<T: SearchTime>(
+        &self,
+        start: T,
+        end: T,
+        delta_t: f64,
+    ) -> Result<()> {
         if !delta_t.is_finite() || end < start {
             return Err(invalid_time("invalid search interval or delta_t"));
         }
@@ -413,7 +422,7 @@ const fn invalid_time(message: &'static str) -> Error {
 
 // Keep both numeric and chrono searches on the same algorithm, while evaluating
 // the exact representation returned to their respective callers.
-trait SearchTime: Copy + PartialOrd {
+pub(crate) trait SearchTime: Copy + PartialOrd {
     fn julian_day(self) -> f64;
     fn hours_until(self, end: Self) -> f64;
     fn shift_hours(self, hours: f64) -> Self;

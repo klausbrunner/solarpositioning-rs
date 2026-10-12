@@ -151,7 +151,7 @@ pub use crate::error::{Error, Result};
 pub use crate::events::Events;
 pub use crate::events::{EventPosition, HorizonState, SolarEvents};
 pub use crate::positions::{PreparedPositions, SolarPositions};
-pub use crate::types::{Horizon, Location, RefractionCorrection, SolarPosition};
+pub use crate::types::{ElevationTarget, Horizon, Location, RefractionCorrection, SolarPosition};
 
 #[cfg(feature = "alloc")]
 extern crate alloc;

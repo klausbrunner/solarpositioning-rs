@@ -7,7 +7,7 @@ const SUNRISE_SUNSET_ELEVATION: f64 = -50.0 / 60.0;
 
 /// Geographic coordinates in degrees, with longitude positive east.
 ///
-/// Event calculations use sea level. Calculators validate latitude in [-90, 90]
+/// Standard event calculations use sea level. Calculators validate latitude in [-90, 90]
 /// and longitude in [-180, 180], rejecting non-finite coordinates.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Location {
@@ -48,6 +48,36 @@ impl Horizon {
             Self::Custom(angle) => *angle,
         }
     }
+}
+
+/// Solar-centre elevation and observation settings for a bounded crossing search.
+///
+/// Matches the elevation returned by [`crate::SolarPositions`] with these settings.
+/// Height changes topocentric parallax; it does not lower the visible horizon.
+///
+/// ```
+/// use solar_positioning::{ElevationTarget, Location, RefractionCorrection, SolarPositions};
+///
+/// let target = ElevationTarget {
+///     angle: 10.0,
+///     height: 190.0,
+///     refraction: Some(RefractionCorrection::standard()),
+/// };
+/// let rise = SolarPositions::new().next_elevation_rise_from_julian(
+///     2_460_389.5, 2_460_390.5,
+///     Location { latitude: 48.21, longitude: 16.37 }, 69.184, target,
+/// )?;
+/// assert!(rise.is_some());
+/// # Ok::<(), solar_positioning::Error>(())
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ElevationTarget {
+    /// Elevation in degrees, geometric with no refraction or apparent with refraction.
+    pub angle: f64,
+    /// Observer height in metres above sea level; Grena3 requires zero.
+    pub height: f64,
+    /// Atmospheric correction, or `None` for geometric elevation.
+    pub refraction: Option<RefractionCorrection>,
 }
 
 /// Atmospheric conditions for refraction correction in solar position calculations.

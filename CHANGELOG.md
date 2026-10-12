@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Add position-consistent elevation crossings with observer height and optional refraction, through `ElevationTarget` and `SolarPositions::next_elevation_rise/set` (chrono and numeric APIs).
+
 ### Fixed
 
 - Keep normalized azimuths in [0°, 360°), including extreme finite inputs.

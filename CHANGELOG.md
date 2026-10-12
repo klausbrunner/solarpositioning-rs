@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [0.7.1] - 2026-10-12
+
 ### Added
 
 - Add position-consistent elevation crossings with observer height and optional refraction, through `ElevationTarget` and `SolarPositions::next_elevation_rise/set` (chrono and numeric APIs).

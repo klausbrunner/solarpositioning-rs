@@ -25,7 +25,7 @@ pub enum Error {
         /// The invalid height in metres above sea level.
         value: f64,
     },
-    /// Invalid elevation angle for sunrise/sunset calculations.
+    /// Invalid solar elevation angle (must be between -90 and +90 degrees).
     InvalidElevationAngle {
         /// The invalid elevation angle value provided.
         value: f64,

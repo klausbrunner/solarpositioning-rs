@@ -35,6 +35,8 @@ const EARTH_RADIUS_METERS: f64 = 6378140.0;
 /// Seconds per hour conversion factor.
 const SECONDS_PER_HOUR: f64 = 3600.0;
 
+pub const REFRACTION_CUTOFF: f64 = -0.83337;
+
 /// Time-dependent SPA values (steps 1-11), independent of observer location.
 #[derive(Debug, Clone, Copy)]
 pub struct TimeDependent {
@@ -306,15 +308,8 @@ pub fn solar_position(
     // Apply atmospheric refraction if requested
     let elevation_angle = 90.0 - zenith_angle;
     let final_zenith = refraction.map_or(zenith_angle, |correction| {
-        if elevation_angle > -0.83337 {
-            let pressure = correction.pressure();
-            let temperature = correction.temperature();
-            zenith_angle
-                - (pressure / 1010.0) * (283.0 / (273.0 + temperature)) * 1.02
-                    / (60.0
-                        * tan(degrees_to_radians(
-                            elevation_angle + 10.3 / (elevation_angle + 5.11),
-                        )))
+        if elevation_angle > REFRACTION_CUTOFF {
+            zenith_angle - refraction_correction(elevation_angle, correction)
         } else {
             zenith_angle
         }
@@ -323,9 +318,35 @@ pub fn solar_position(
     SolarPosition::new(azimuth, final_zenith)
 }
 
+#[inline]
+fn refraction_phase(elevation: f64) -> f64 {
+    degrees_to_radians(elevation + 10.3 / (elevation + 5.11))
+}
+
+// Degrees on the active branch; callers apply REFRACTION_CUTOFF.
+#[inline]
+pub fn refraction_correction(elevation: f64, correction: RefractionCorrection) -> f64 {
+    (correction.pressure() / 1010.0) * (283.0 / (273.0 + correction.temperature())) * 1.02
+        / (60.0 * tan(refraction_phase(elevation)))
+}
+
+pub fn refraction_slope_bound(correction: RefractionCorrection) -> f64 {
+    // The phase derivative is at most one, and sin(phase) is smallest at the cutoff.
+    let (sine, cosine) = sin_cos(refraction_phase(REFRACTION_CUTOFF));
+    refraction_correction(REFRACTION_CUTOFF, correction) * degrees_to_radians(1.0) / (sine * cosine)
+}
+
+pub fn event_position(time: JulianDate, location: Location) -> Result<EventPosition> {
+    event_position_at_height(time, location, 0.0)
+}
+
 #[allow(clippy::suboptimal_flops)] // Keep the vector geometry directly readable.
 #[allow(clippy::unnecessary_wraps)] // Matches the fallible position-provider contract.
-pub fn event_position(time: JulianDate, location: Location) -> Result<EventPosition> {
+pub fn event_position_at_height(
+    time: JulianDate,
+    location: Location,
+    height: f64,
+) -> Result<EventPosition> {
     let Location {
         latitude,
         longitude,
@@ -333,8 +354,12 @@ pub fn event_position(time: JulianDate, location: Location) -> Result<EventPosit
     let phi = latitude.to_radians();
     let u = atan(EARTH_FLATTENING_FACTOR * tan(phi));
     let (sin_phi, cos_phi) = sin_cos(phi);
-    let x = cos(u);
-    let z = EARTH_FLATTENING_FACTOR * sin(u);
+    let x = mul_add(height / EARTH_RADIUS_METERS, cos_phi, cos(u));
+    let z = mul_add(
+        height / EARTH_RADIUS_METERS,
+        sin_phi,
+        EARTH_FLATTENING_FACTOR * sin(u),
+    );
     let parts = time_dependent(time);
     let delta = parts.delta_degrees.to_radians();
     let hour_angle = parts.nu_degrees + longitude - parts.alpha_degrees;

@@ -15,10 +15,12 @@ use crate::error::check_coordinates;
 use crate::events::EventPosition;
 use crate::math::{
     PI, asin, atan2, cos, degrees_to_radians, normalize_degrees_0_to_360, radians_to_degrees,
-    rem_euclid, sin, sqrt, tan,
+    rem_euclid, sin, sin_cos, sqrt, tan,
 };
 use crate::time::JulianDate;
 use crate::{Location, RefractionCorrection, Result, SolarPosition};
+
+pub const REFRACTION_CUTOFF: f64 = 0.0;
 
 /// Angles in radians, independent of observer location.
 #[derive(Debug, Clone, Copy)]
@@ -46,11 +48,8 @@ pub fn solar_position(
 
     // Apply refraction correction if provided and sun is visible
     let delta_re = refraction.map_or(0.0, |correction| {
-        if e_p > 0.0 {
-            let pressure = correction.pressure();
-            let temperature = correction.temperature();
-            (0.08422 * (pressure / 1000.0))
-                / ((273.0 + temperature) * tan(e_p + 0.003138 / (e_p + 0.08919)))
+        if e_p > REFRACTION_CUTOFF {
+            refraction_correction(e_p, correction)
         } else {
             0.0
         }
@@ -62,6 +61,24 @@ pub fn solar_position(
     let zenith = radians_to_degrees(z);
 
     SolarPosition::new(azimuth, zenith)
+}
+
+#[inline]
+fn refraction_phase(elevation: f64) -> f64 {
+    elevation + 0.003138 / (elevation + 0.08919)
+}
+
+// Radians on the active branch; callers apply REFRACTION_CUTOFF.
+#[inline]
+pub fn refraction_correction(elevation: f64, correction: RefractionCorrection) -> f64 {
+    (0.08422 * (correction.pressure() / 1000.0))
+        / ((273.0 + correction.temperature()) * tan(refraction_phase(elevation)))
+}
+
+pub fn refraction_slope_bound(correction: RefractionCorrection) -> f64 {
+    // The phase derivative is at most one, and sin(phase) is smallest at the cutoff.
+    let (sine, cosine) = sin_cos(refraction_phase(REFRACTION_CUTOFF));
+    refraction_correction(REFRACTION_CUTOFF, correction) / (sine * cosine)
 }
 
 // Unrefracted angles in radians; azimuth is measured westwards from south.

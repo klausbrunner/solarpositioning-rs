@@ -1,7 +1,9 @@
 //! Solar positions and reusable calculations for a fixed time.
 
 use crate::{
-    Error, Location, RefractionCorrection, Result, SolarPosition, grena3, spa,
+    Error, Location, RefractionCorrection, Result, SolarPosition, grena3,
+    math::asin,
+    spa,
     time::{JulianDate, TimeRange},
 };
 #[cfg(feature = "chrono")]
@@ -169,6 +171,35 @@ enum PreparedModel {
 }
 
 impl PreparedPositions {
+    /// Returns the Earth-Sun distance in astronomical units (AU).
+    ///
+    /// Available for SPA; Grena3 does not compute this value and returns `None`.
+    #[must_use]
+    pub const fn earth_radius_vector(&self) -> Option<f64> {
+        match &self.model {
+            PreparedModel::Spa(parts) => Some(parts.r),
+            PreparedModel::Grena3(_) => None,
+        }
+    }
+
+    /// Returns the geocentric solar right ascension in degrees, for either model.
+    #[must_use]
+    pub const fn right_ascension(&self) -> f64 {
+        match &self.model {
+            PreparedModel::Spa(parts) => parts.alpha_degrees,
+            PreparedModel::Grena3(parts) => parts.alpha.to_degrees(),
+        }
+    }
+
+    /// Returns the geocentric solar declination in degrees, for either model.
+    #[must_use]
+    pub fn declination(&self) -> f64 {
+        match &self.model {
+            PreparedModel::Spa(parts) => parts.delta_degrees,
+            PreparedModel::Grena3(parts) => asin(parts.sin_delta).to_degrees(),
+        }
+    }
+
     /// Calculates a position at this prepared time.
     ///
     /// `height` is in metres above sea level; use zero for sea level. Grena3 requires

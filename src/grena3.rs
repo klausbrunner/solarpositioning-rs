@@ -26,8 +26,8 @@ pub const REFRACTION_CUTOFF: f64 = 0.0;
 #[derive(Debug, Clone, Copy)]
 pub struct TimeDependent {
     sidereal_time: f64,
-    alpha: f64,
-    sin_delta: f64,
+    pub alpha: f64,
+    pub sin_delta: f64,
     cos_delta: f64,
 }
 

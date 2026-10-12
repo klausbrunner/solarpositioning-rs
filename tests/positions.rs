@@ -20,6 +20,11 @@ fn prepared_positions_match_single_calls_and_remain_independent() {
         for month in [1, 3, 6, 9, 12] {
             let time = JulianDate::from_utc(2024, month, 21, 12, 30, 12.5, 69.184).unwrap();
             let prepared = positions.for_time_from_julian(time).unwrap();
+            let reference = SolarPositions::new().for_time_from_julian(time).unwrap();
+            assert!((0.0..360.0).contains(&prepared.right_ascension()));
+            let ra_error = (prepared.right_ascension() - reference.right_ascension()).abs();
+            assert!(ra_error.min(360.0 - ra_error) < 0.02);
+            assert!((prepared.declination() - reference.declination()).abs() < 0.02);
             let original = prepared.at(LOCATION, height, None).unwrap();
             let later = JulianDate::new(time.julian_date() + 0.25, time.delta_t() + 1.0).unwrap();
             let other = positions.for_time_from_julian(later).unwrap();
@@ -49,6 +54,11 @@ fn prepared_positions_match_single_calls_and_remain_independent() {
 #[test]
 fn published_position_examples() {
     let time = JulianDate::from_utc(2003, 10, 17, 19, 30, 30.0, 67.0).unwrap();
+    let prepared = SolarPositions::new().for_time_from_julian(time).unwrap();
+    // NREL Table A5.1 gives the radius vector (AU) and geocentric angles (degrees).
+    assert!((prepared.earth_radius_vector().unwrap() - 0.9965422974).abs() < 1e-10);
+    assert!((prepared.right_ascension() - 202.22741).abs() < 0.00001);
+    assert!((prepared.declination() - (-9.31434)).abs() < 0.00001);
     let position = SolarPositions::new()
         .at_from_julian(
             time,
@@ -65,6 +75,8 @@ fn published_position_examples() {
 
     // Grena's sample reports angles to five decimal places in radians.
     let time = JulianDate::from_utc(2012, 1, 1, 11, 0, 0.0, 65.0).unwrap();
+    let prepared = SolarPositions::grena3().for_time_from_julian(time).unwrap();
+    assert_eq!(prepared.earth_radius_vector(), None);
     let position = SolarPositions::grena3()
         .at_from_julian(
             time,

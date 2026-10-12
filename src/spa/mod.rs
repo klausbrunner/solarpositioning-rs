@@ -40,10 +40,10 @@ pub const REFRACTION_CUTOFF: f64 = -0.83337;
 /// Time-dependent SPA values (steps 1-11), independent of observer location.
 #[derive(Debug, Clone, Copy)]
 pub struct TimeDependent {
-    r: f64,
+    pub r: f64,
     nu_degrees: f64,
-    alpha_degrees: f64,
-    delta_degrees: f64,
+    pub alpha_degrees: f64,
+    pub delta_degrees: f64,
 }
 
 #[derive(Debug, Clone, Copy)]

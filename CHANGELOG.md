@@ -8,6 +8,8 @@
 
 ### Fixed
 
+- Restore access to the Earth radius vector through `PreparedPositions::earth_radius_vector` (SPA only).
+- Restore `right_ascension` and `declination` getters on `PreparedPositions`, in degrees for both models.
 - Keep normalized azimuths in [0°, 360°), including extreme finite inputs.
 - Fix missed shallow crossings at subdivision points.
 

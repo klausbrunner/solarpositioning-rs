@@ -68,3 +68,22 @@ fn spa_matches_nrel_reference_data() -> Result<(), Box<dyn Error>> {
     assert!(count > 0, "no reference records loaded");
     Ok(())
 }
+
+#[test]
+fn spa_far_future_position() {
+    let datetime = "6000-06-21T12:00:00Z".parse::<DateTime<Utc>>().unwrap();
+    let position = SolarPositions::new()
+        .at(
+            &datetime,
+            Location {
+                latitude: 45.0,
+                longitude: 0.0,
+            },
+            0.0,
+            0.0,
+            None,
+        )
+        .unwrap();
+
+    assert!((position.zenith_angle() - 22.139936713).abs() < 1e-6);
+}

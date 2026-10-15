@@ -46,6 +46,20 @@ fn finds_known_crossings_and_rejects_tangencies() {
         });
         if horizon >= 0.0 {
             assert!(rises.is_empty() && sets.is_empty());
+            for (start, end) in [(2_460_389.5, 2_460_390.0), (2_460_390.0, 2_460_390.5)] {
+                assert!(
+                    calculator
+                        .next_rise_from_julian(start, end, ORIGIN, 0.0, Horizon::Custom(horizon))
+                        .unwrap()
+                        .is_none()
+                );
+                assert!(
+                    calculator
+                        .next_set_from_julian(start, end, ORIGIN, 0.0, Horizon::Custom(horizon))
+                        .unwrap()
+                        .is_none()
+                );
+            }
         } else {
             let days = (-2.0 * horizon.to_radians().sin()).sqrt().asin() / std::f64::consts::PI;
             assert_eq!(rises.len(), 1);
@@ -57,7 +71,7 @@ fn finds_known_crossings_and_rejects_tangencies() {
 }
 
 #[test]
-fn preserves_shallow_crossings_at_subdivision_points() {
+fn preserves_shallow_crossings_at_subdivision_points_and_endpoints() {
     let root = 2_460_390.0;
     for direction in [-1.0, 1.0] {
         let calculator = SolarEvents::with_provider(
@@ -84,6 +98,8 @@ fn preserves_shallow_crossings_at_subdivision_points() {
             let event = search(start, end).unwrap().unwrap();
             assert!((event - root).abs() * 86400.0 < 0.0011);
             assert!(search(event, end).unwrap().is_none());
+            assert_eq!(search(start, root).unwrap(), Some(root));
+            assert!(search(root, end).unwrap().is_none());
         }
     }
 }
@@ -115,6 +131,18 @@ fn grena_preserves_shallow_polar_crossing_in_short_windows() {
         assert!(
             calculator
                 .next_rise_from_julian(rise, end, location, 0.0, Horizon::Custom(horizon))
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            calculator
+                .next_rise_from_julian(start, root, location, 0.0, Horizon::Custom(horizon))
+                .unwrap(),
+            Some(root)
+        );
+        assert!(
+            calculator
+                .next_rise_from_julian(root, end, location, 0.0, Horizon::Custom(horizon))
                 .unwrap()
                 .is_none()
         );
@@ -362,6 +390,34 @@ fn provider_ranges_apply_to_both_ut_and_tt() {
         (end - 1.0, end, 1.0),
     ] {
         assert!(calculator.next_transit_from_julian(a, b, 0.0, dt).is_err());
+    }
+
+    // An exact-zero endpoint must not trigger a probe past either supported limit.
+    let bounded = SolarEvents::with_provider(
+        |time: JulianDate, _: Location| {
+            assert!(time.julian_date() <= end && time.julian_ephemeris_day() <= end);
+            let hours = (time.julian_ephemeris_day() - end) * 24.0;
+            Ok(EventPosition {
+                elevation: hours * 1e-4,
+                hour_angle: hours * 15.0,
+            })
+        },
+        2010..=2110,
+    )
+    .unwrap();
+    for delta_t in [0.0, 60.0] {
+        let limit = end - delta_t / 86400.0;
+        assert!(
+            bounded
+                .next_rise_from_julian(
+                    limit - 10.0 / 86400.0,
+                    limit,
+                    ORIGIN,
+                    delta_t,
+                    Horizon::Custom(0.0),
+                )
+                .is_ok()
+        );
     }
 }
 

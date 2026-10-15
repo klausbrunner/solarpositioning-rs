@@ -257,7 +257,18 @@ where
             function: |t| position(start.at(end, t, hours).julian_day()),
             curvature,
         };
-        let crossing = search.find(0.0, hours, search.value(0.0)?, search.value(hours)?)?;
+        let b = search.value(hours)?;
+        let crossing = search.find(0.0, hours, search.value(0.0)?, b)?;
+        if crossing.is_none() && b == 0.0 {
+            // Include a zero endpoint only when it crosses, rather than touches, the horizon.
+            let after = end.shift_hours(TIME_TOLERANCE);
+            if after.in_range(self.range, delta_t)
+                && search.value((hours - TIME_TOLERANCE).max(0.0))? < 0.0
+                && position(after.julian_day())? > 0.0
+            {
+                return Ok(Some(end));
+            }
+        }
         Ok(crossing.map(|t| start.at(end, t, hours)))
     }
 

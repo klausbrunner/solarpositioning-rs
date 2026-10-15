@@ -262,6 +262,36 @@ fn finds_seasonal_rise_at_both_poles() {
 }
 
 #[test]
+fn includes_shallow_endpoint_crossing_without_repeating_it() {
+    let root = instant("2024-06-21T12:00:00Z");
+    let start = root - Duration::seconds(10);
+    let end = root + Duration::seconds(10);
+    let location = Location {
+        latitude: -90.0,
+        longitude: 0.0,
+    };
+    let horizon = Horizon::Custom(
+        SolarPositions::grena3()
+            .at(&root, location, 0.0, 0.0, None)
+            .unwrap()
+            .elevation_angle(),
+    );
+    let calculator = SolarEvents::grena3();
+    assert_eq!(
+        calculator
+            .next_rise(&start, &root, location, 0.0, horizon)
+            .unwrap(),
+        Some(root)
+    );
+    assert!(
+        calculator
+            .next_rise(&root, &end, location, 0.0, horizon)
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[test]
 fn assigns_midnight_crossings_to_the_following_date() {
     use solar_positioning::HorizonState;
     let date = NaiveDate::from_ymd_opt(2024, 3, 20).unwrap();

@@ -1,11 +1,10 @@
 //! SPA algorithm coefficient tables.
 //!
-//! These coefficients are from the NREL SPA algorithm by Reda & Andreas (2003).
-//! All values are exactly as specified in the original algorithm.
+//! Values follow NREL/TP-560-34302 (revised January 2008), Tables A4.2-A4.3
+//! and equations 15-19 and 24: <https://doi.org/10.2172/15003974>.
 
 #![allow(clippy::unreadable_literal)]
-
-use crate::math::PI;
+#![allow(clippy::approx_constant)] // Preserve the published phase coefficients.
 
 /// Earth heliocentric longitude periodic terms (`TERMS_L`).
 ///
@@ -151,12 +150,12 @@ pub(super) const TERMS_L: &[&[&[f64; 3]]] = &[
     ],
     // L4 terms (JME^4)
     &[
-        &[114.0, PI, 0.0],
+        &[114.0, 3.142, 0.0],
         &[8.0, 4.13, 6283.08],
         &[1.0, 3.84, 12566.15],
     ],
     // L5 terms (JME^5)
-    &[&[1.0, PI, 0.0]],
+    &[&[1.0, 3.14, 0.0]],
 ];
 
 /// Earth heliocentric latitude periodic terms (`TERMS_B`).
@@ -222,7 +221,7 @@ pub(super) const TERMS_R: &[&[&[f64; 3]]] = &[
     &[
         &[103019.0, 1.10749, 6283.07585],
         &[1721.0, 1.0644, 12566.1517],
-        &[702.0, PI, 0.0],
+        &[702.0, 3.142, 0.0],
         &[32.0, 1.02, 18849.23],
         &[31.0, 2.84, 5507.55],
         &[25.0, 1.32, 5223.69],
@@ -235,7 +234,7 @@ pub(super) const TERMS_R: &[&[&[f64; 3]]] = &[
     &[
         &[4359.0, 5.7846, 6283.0758],
         &[124.0, 5.579, 12566.152],
-        &[12.0, PI, 0.0],
+        &[12.0, 3.14, 0.0],
         &[9.0, 3.63, 77713.77],
         &[6.0, 1.87, 5573.14],
         &[3.0, 5.47, 18849.23],

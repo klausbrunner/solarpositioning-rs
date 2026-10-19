@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [0.7.2] - 2026-10-19
+
 ### Fixed
 
 - Correct sign of SPA's fourth-order obliquity coefficient (improves position accuracy for dates far from 2000).

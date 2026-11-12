@@ -137,16 +137,15 @@ Supported years apply to both UT and TT. Calendar inputs use the proleptic
 Gregorian calendar; UTC approximates UT1. Grena3 requires zero observer height.
 Height changes parallax, not the visible horizon.
 
-Standard events use sea-level solar-centre positions. Sunrise and sunset include
-the conventional refraction and solar-radius allowance; twilight and custom
-horizons are geometric. Note that millisecond search resolution is not observational
-accuracy: weather and terrain will shift observed sunrise by _minutes_
-([USNO](https://aa.usno.navy.mil/faq/RST_defs)).
+Standard events use sea-level solar-centre positions, with sunrise and sunset including
+the conventional refraction and solar-radius allowance. While the algorithm has a
+search resolution down to the millisecond, note that weather and terrain will easily shift 
+actually observed sunrise by _minutes_ ([USNO](https://aa.usno.navy.mil/faq/RST_defs)).
 Transit is meridian passage, not necessarily maximum elevation.
 
 Delta T estimates follow [Espenak and Meeus](http://eclipse.gsfc.nasa.gov/SEcat5/deltatpoly.html)
 with [updated fits](https://klaus.brunners.name/posts/delta-t-polynomials/).
-Future estimates are uncertain, particularly beyond 2100.
+Future estimates are (obviously) uncertain, particularly beyond 2100.
 
 ## Examples
 

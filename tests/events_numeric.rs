@@ -105,6 +105,32 @@ fn preserves_shallow_crossings_at_subdivision_points_and_endpoints() {
 }
 
 #[test]
+fn flat_search_reports_an_exhausted_evaluation_limit() {
+    let calculator = SolarEvents::with_provider(
+        |time: JulianDate, _: Location| {
+            Ok(EventPosition {
+                elevation: 0.0,
+                hour_angle: 360.0 * (time.julian_date() - 2_460_390.0),
+            })
+        },
+        2024..=2024,
+    )
+    .unwrap();
+    assert_eq!(
+        calculator.next_rise_from_julian(
+            2_460_390.0,
+            2_460_390.0 + 120.0 / 86400.0,
+            ORIGIN,
+            0.0,
+            Horizon::Custom(0.0),
+        ),
+        Err(Error::ComputationError {
+            message: "solar event search exceeded its evaluation limit",
+        })
+    );
+}
+
+#[test]
 fn grena_preserves_shallow_polar_crossing_in_short_windows() {
     let root = 2_460_483.0; // 2024-06-21 noon UT, near the solstice.
     let location = Location {
@@ -392,22 +418,22 @@ fn provider_ranges_apply_to_both_ut_and_tt() {
         assert!(calculator.next_transit_from_julian(a, b, 0.0, dt).is_err());
     }
 
-    // An exact-zero endpoint must not trigger a probe past either supported limit.
-    let bounded = SolarEvents::with_provider(
-        |time: JulianDate, _: Location| {
-            assert!(time.julian_date() <= end && time.julian_ephemeris_day() <= end);
-            let hours = (time.julian_ephemeris_day() - end) * 24.0;
-            Ok(EventPosition {
-                elevation: hours * 1e-4,
-                hour_angle: hours * 15.0,
-            })
-        },
-        2010..=2110,
-    )
-    .unwrap();
-    for delta_t in [0.0, 60.0] {
-        let limit = end - delta_t / 86400.0;
-        assert!(
+    // The exact crossing belongs to the interval, including at the UT and TT limits.
+    for (ceiling, delta_t) in [(end - 1.0, 0.0), (end, 0.0), (end, 60.0)] {
+        let limit = ceiling - delta_t / 86400.0;
+        let bounded = SolarEvents::with_provider(
+            |time: JulianDate, _: Location| {
+                assert!(time.julian_date() <= limit && time.julian_ephemeris_day() <= ceiling);
+                let hours = (time.julian_ephemeris_day() - ceiling) * 24.0;
+                Ok(EventPosition {
+                    elevation: hours * 1e-4,
+                    hour_angle: hours * 15.0,
+                })
+            },
+            2010..=2110,
+        )
+        .unwrap();
+        assert_eq!(
             bounded
                 .next_rise_from_julian(
                     limit - 10.0 / 86400.0,
@@ -416,7 +442,8 @@ fn provider_ranges_apply_to_both_ut_and_tt() {
                     delta_t,
                     Horizon::Custom(0.0),
                 )
-                .is_ok()
+                .unwrap(),
+            Some(limit)
         );
     }
 }

@@ -1,7 +1,8 @@
 use chrono::{DateTime, Duration, Utc};
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use solar_positioning::{
-    ElevationTarget, Location, RefractionCorrection, SolarPositions, time::JulianDate,
+    ElevationTarget, Horizon, Location, RefractionCorrection, SolarEvents, SolarPositions,
+    time::JulianDate,
 };
 use std::hint::black_box;
 
@@ -235,6 +236,25 @@ fn benchmark_elevation_crossings(c: &mut Criterion) {
             });
         }
     }
+    group.bench_function("spa/polar_near_tangency", |b| {
+        let events = SolarEvents::new();
+        let solstice = 2_460_482.365_7;
+        let pole = Location {
+            latitude: 90.0,
+            longitude: 0.0,
+        };
+        // Just above the North Pole's June 2024 maximum elevation.
+        let horizon = Horizon::Custom(23.43603008);
+        b.iter(|| {
+            events.next_rise_from_julian(
+                black_box(solstice - 0.5),
+                black_box(solstice + 0.5),
+                black_box(pole),
+                black_box(69.184),
+                black_box(horizon),
+            )
+        });
+    });
     group.finish();
 }
 

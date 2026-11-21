@@ -132,6 +132,34 @@ fn crossings_match_position_predicates_across_settings_and_seasons() {
 }
 
 #[test]
+fn spa_includes_an_endpoint_at_the_reported_elevation() {
+    let positions = SolarPositions::new();
+    let location = Location {
+        latitude: 48.21,
+        longitude: 16.37,
+    };
+    let end = 2_460_389.75; // 2024-03-20 06:00 UTC.
+    let mut target = ElevationTarget {
+        angle: 0.0,
+        height: 190.0,
+        refraction: None,
+    };
+    target.angle = elevation(positions, end, location, target);
+
+    assert_eq!(
+        crossing(
+            positions,
+            true,
+            end - 300.0 / 86400.0,
+            end,
+            location,
+            target
+        ),
+        Some(end)
+    );
+}
+
+#[test]
 fn spa_crossings_use_observer_height() {
     let positions = SolarPositions::new();
     let location = Location {

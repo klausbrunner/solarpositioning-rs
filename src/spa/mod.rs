@@ -13,7 +13,7 @@
 use crate::error::check_coordinates;
 use crate::math::{
     acos, asin, atan, atan2, cos, degrees_to_radians, mul_add, normalize_degrees_0_to_360,
-    polynomial, powi, radians_to_degrees, sin, sin_cos, sqrt, tan,
+    polynomial, powi, radians_to_degrees, sin, sin_cos, tan,
 };
 use crate::time::JulianDate;
 use crate::{Location, RefractionCorrection, Result, SolarPosition, events::EventPosition};
@@ -238,20 +238,38 @@ pub fn solar_position(
 ) -> Result<SolarPosition> {
     check_coordinates(latitude, longitude)?;
 
-    // 3.9. Calculate the observer local hour angle, H (in degrees)
-    // Use pre-computed apparent sidereal time from time_dependent parts
-    let nu_degrees = time_dependent.nu_degrees;
+    let topocentric = topocentric(time_dependent, latitude, longitude, elevation);
+    let zenith = topocentric.zenith_angle();
+    let elevation_angle = 90.0 - zenith;
+    let final_zenith = match refraction {
+        Some(correction) if elevation_angle > REFRACTION_CUTOFF => {
+            zenith - refraction_correction(elevation_angle, correction)
+        }
+        _ => zenith,
+    };
+    SolarPosition::new(topocentric.azimuth(), final_zenith)
+}
 
-    // Use pre-computed geocentric sun right ascension and declination
-    let h_degrees =
-        normalize_degrees_0_to_360(nu_degrees + longitude - time_dependent.alpha_degrees);
+struct Topocentric {
+    geocentric_hour_angle: f64,
+    sin_phi: f64,
+    cos_phi: f64,
+    sin_delta_prime: f64,
+    cos_delta_prime: f64,
+    sin_h_prime: f64,
+    cos_h_prime: f64,
+}
+
+fn topocentric(parts: &TimeDependent, latitude: f64, longitude: f64, height: f64) -> Topocentric {
+    // 3.9. Geocentric local hour angle H, in degrees.
+    let h_degrees = normalize_degrees_0_to_360(parts.nu_degrees + longitude - parts.alpha_degrees);
     let h = degrees_to_radians(h_degrees);
 
     // 3.10-3.11. Calculate the topocentric sun coordinates
-    let xi_degrees = 8.794 / (3600.0 * time_dependent.r);
+    let xi_degrees = 8.794 / (3600.0 * parts.r);
     let xi = degrees_to_radians(xi_degrees);
     let phi = degrees_to_radians(latitude);
-    let delta = degrees_to_radians(time_dependent.delta_degrees);
+    let delta = degrees_to_radians(parts.delta_degrees);
     let sin_xi = sin(xi);
     let (sin_phi, cos_phi) = sin_cos(phi);
     let (sin_delta, cos_delta) = sin_cos(delta);
@@ -262,18 +280,16 @@ pub fn solar_position(
     let y = mul_add(
         EARTH_FLATTENING_FACTOR,
         sin_u,
-        (elevation / EARTH_RADIUS_METERS) * sin_phi,
+        (height / EARTH_RADIUS_METERS) * sin_phi,
     );
-    let x = mul_add(elevation / EARTH_RADIUS_METERS, cos_phi, cos_u);
+    let x = mul_add(height / EARTH_RADIUS_METERS, cos_phi, cos_u);
 
-    let delta_alpha_prime_degrees = radians_to_degrees(atan2(
-        -x * sin_xi * sin_h,
-        mul_add(x * sin_xi, -cos_h, cos_delta),
-    ));
+    let denominator = mul_add(x * sin_xi, -cos_h, cos_delta);
+    let delta_alpha_prime_degrees = radians_to_degrees(atan2(-x * sin_xi * sin_h, denominator));
 
     let delta_prime_degrees = radians_to_degrees(atan2(
         mul_add(y, -sin_xi, sin_delta) * cos(degrees_to_radians(delta_alpha_prime_degrees)),
-        mul_add(x * sin_xi, -cos_h, cos_delta),
+        denominator,
     ));
 
     // 3.12. Calculate the topocentric local hour angle, H' (in degrees)
@@ -283,39 +299,41 @@ pub fn solar_position(
     let (sin_delta_prime, cos_delta_prime) = sin_cos(delta_prime);
     let (sin_h_prime, cos_h_prime) = sin_cos(h_prime);
 
-    // 3.13. Calculate the topocentric zenith and azimuth angles
-    let cos_zenith = mul_add(
+    Topocentric {
+        geocentric_hour_angle: h_degrees,
         sin_phi,
+        cos_phi,
         sin_delta_prime,
-        cos_phi * cos_delta_prime * cos_h_prime,
-    );
-    // Roundoff can put the cosine just outside [-1, 1] at zenith or nadir.
-    let zenith_angle = radians_to_degrees(acos(cos_zenith.clamp(-1.0, 1.0)));
+        cos_delta_prime,
+        sin_h_prime,
+        cos_h_prime,
+    }
+}
 
-    // 3.14. Calculate the topocentric azimuth angle
-    let azimuth = normalize_degrees_0_to_360(
+impl Topocentric {
+    // 3.13. Topocentric zenith angle.
+    fn zenith_angle(&self) -> f64 {
+        let cos_zenith = mul_add(
+            self.sin_phi,
+            self.sin_delta_prime,
+            self.cos_phi * self.cos_delta_prime * self.cos_h_prime,
+        );
+        // Roundoff can put the cosine just outside [-1, 1] at zenith or nadir.
+        radians_to_degrees(acos(cos_zenith.clamp(-1.0, 1.0)))
+    }
+
+    // 3.14. Topocentric azimuth angle, measured clockwise from north.
+    fn azimuth(&self) -> f64 {
         180.0
             + radians_to_degrees(atan2(
-                sin_h_prime,
+                self.sin_h_prime,
                 mul_add(
-                    sin_delta_prime / cos_delta_prime,
-                    -cos_phi,
-                    cos_h_prime * sin_phi,
+                    self.sin_delta_prime / self.cos_delta_prime,
+                    -self.cos_phi,
+                    self.cos_h_prime * self.sin_phi,
                 ),
-            )),
-    );
-
-    // Apply atmospheric refraction if requested
-    let elevation_angle = 90.0 - zenith_angle;
-    let final_zenith = refraction.map_or(zenith_angle, |correction| {
-        if elevation_angle > REFRACTION_CUTOFF {
-            zenith_angle - refraction_correction(elevation_angle, correction)
-        } else {
-            zenith_angle
-        }
-    });
-
-    SolarPosition::new(azimuth, final_zenith)
+            ))
+    }
 }
 
 #[inline]
@@ -340,38 +358,21 @@ pub fn event_position(time: JulianDate, location: Location) -> Result<EventPosit
     event_position_at_height(time, location, 0.0)
 }
 
-#[allow(clippy::suboptimal_flops)] // Keep the vector geometry directly readable.
 #[allow(clippy::unnecessary_wraps)] // Matches the fallible position-provider contract.
 pub fn event_position_at_height(
     time: JulianDate,
     location: Location,
     height: f64,
 ) -> Result<EventPosition> {
-    let Location {
-        latitude,
-        longitude,
-    } = location;
-    let phi = latitude.to_radians();
-    let u = atan(EARTH_FLATTENING_FACTOR * tan(phi));
-    let (sin_phi, cos_phi) = sin_cos(phi);
-    let x = mul_add(height / EARTH_RADIUS_METERS, cos_phi, cos(u));
-    let z = mul_add(
-        height / EARTH_RADIUS_METERS,
-        sin_phi,
-        EARTH_FLATTENING_FACTOR * sin(u),
+    let position = topocentric(
+        &time_dependent(time),
+        location.latitude,
+        location.longitude,
+        height,
     );
-    let parts = time_dependent(time);
-    let delta = parts.delta_degrees.to_radians();
-    let hour_angle = parts.nu_degrees + longitude - parts.alpha_degrees;
-    let parallax = sin((8.794 / (3600.0 * parts.r)).to_radians());
-    // SPA's topocentric parallax correction in vector form, stable at the zenith.
-    let vx = cos(delta) * cos(hour_angle.to_radians()) - x * parallax;
-    let vy = cos(delta) * sin(hour_angle.to_radians());
-    let vz = sin(delta) - z * parallax;
-    let projection = (cos_phi * vx + sin_phi * vz) / sqrt(vx * vx + vy * vy + vz * vz);
     Ok(EventPosition {
-        elevation: asin(projection.clamp(-1.0, 1.0)).to_degrees(),
-        hour_angle,
+        elevation: 90.0 - position.zenith_angle(),
+        hour_angle: position.geocentric_hour_angle,
     })
 }
 

@@ -16,8 +16,9 @@ impl SolarPositions {
     ///
     /// # Errors
     /// Returns an error for invalid coordinates, angle, height, interval or delta T,
-    /// times outside the model's UT/TT range, a failed computation, or refraction
-    /// too strong to guarantee a monotonic elevation mapping.
+    /// times outside the model's UT/TT range, an exhausted search evaluation limit,
+    /// a failed computation, or refraction too strong to guarantee a monotonic
+    /// elevation mapping.
     pub fn next_elevation_rise_from_julian(
         &self,
         start: f64,

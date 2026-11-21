@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Fixed
+
+- Share SPA elevation between positions and crossings, and check endpoints within the requested interval.
+- Return a computation error when an event search exceeds its evaluation limit.
+
 ## [0.7.2] - 2026-10-19
 
 ### Fixed

@@ -3,12 +3,15 @@
 //! Bounded searches exclude their start and include their end. Pass a returned time
 //! as the next start to continue without repeating an event. Rise, set and upper
 //! meridian transit are independent. A tangency alone is not a crossing.
+//! An exact zero at the end counts if samples within the interval establish a
+//! crossing direction.
 //!
 //! Positions are unrefracted, topocentric solar-centre positions at sea level.
 //! [`Horizon::SunriseSunset`] includes the conventional allowance for refraction and
 //! solar radius; other horizons use their specified geometric elevation. Brackets
 //! are refined to one millisecond, which does not imply equivalent observed-event
 //! accuracy. Crossings closer together need not be distinguished.
+//! If the evaluation limit is reached, the search returns a computation error.
 //!
 //! Numeric times are continuous UT Julian dates. Chrono helpers use a proleptic
 //! Gregorian calendar, approximating UT1 with UTC. Delta T (TT minus UT1, in seconds)
@@ -28,6 +31,7 @@ mod chrono;
 const TIME_TOLERANCE: f64 = 1.0 / 3_600_000.0;
 // Conservative allowance for Julian-date quantisation and floating-point evaluation.
 const ROUNDING_ERROR: f64 = 1e-8;
+const MAX_SEARCH_EVALUATIONS: usize = 65_536;
 
 /// Coordinates needed by the event search, in degrees.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -115,7 +119,8 @@ where
     ///
     /// # Errors
     /// Returns an error for invalid coordinates, horizon, interval or delta T, times
-    /// outside the provider's UT/TT range, or a failed/non-finite provider result.
+    /// outside the provider's UT/TT range, a failed/non-finite provider result, or an
+    /// interval that cannot be resolved within the search's evaluation limit.
     pub fn next_rise_from_julian(
         &self,
         start: f64,
@@ -149,7 +154,8 @@ where
     ///
     /// # Errors
     /// Returns an error for invalid longitude, interval or delta T, times outside
-    /// the provider's UT/TT range, or a failed/non-finite provider result.
+    /// the provider's UT/TT range, a failed/non-finite provider result, or an
+    /// interval that cannot be resolved within the search's evaluation limit.
     pub fn next_transit_from_julian(
         &self,
         start: f64,
@@ -253,19 +259,23 @@ where
         }
         // Evaluate exactly the time that will be returned, including timestamp rounding.
         // Otherwise resuming at a returned crossing can rediscover it.
-        let search = CrossingSearch {
-            function: |t| position(start.at(end, t, hours).julian_day()),
+        let julian_day = |t| start.at(end, t, hours).julian_day();
+        let mut search = CrossingSearch {
+            function: |t| position(julian_day(t)),
             curvature,
+            remaining: MAX_SEARCH_EVALUATIONS,
         };
         let b = search.value(hours)?;
-        let crossing = search.find(0.0, hours, search.value(0.0)?, b)?;
+        let a = search.value(0.0)?;
+        let crossing = search.find(0.0, hours, a, b)?;
         if crossing.is_none() && b == 0.0 {
-            // Include a zero endpoint only when it crosses, rather than touches, the horizon.
-            let after = end.shift_hours(TIME_TOLERANCE);
-            if after.in_range(self.range, delta_t)
-                && search.value((hours - TIME_TOLERANCE).max(0.0))? < 0.0
-                && position(after.julian_day())? > 0.0
-            {
+            let before = (hours - TIME_TOLERANCE).max(0.0);
+            // The endpoint slope can differ from the chord slope by at most M*w/2.
+            // Use the actual Julian dates to account for timestamp rounding.
+            let width = (julian_day(hours) - julian_day(before)) * 24.0;
+            let curvature_margin = curvature * width * width / 2.0;
+            let rounding_margin = 2.0 * f64::EPSILON;
+            if -search.value(before)? > curvature_margin + rounding_margin {
                 return Ok(Some(end));
             }
         }
@@ -467,14 +477,21 @@ impl SearchTime for f64 {
 struct CrossingSearch<F> {
     function: F,
     curvature: f64,
+    remaining: usize,
 }
 
 impl<F: Fn(f64) -> Result<f64>> CrossingSearch<F> {
-    fn value(&self, time: f64) -> Result<f64> {
+    fn value(&mut self, time: f64) -> Result<f64> {
+        if self.remaining == 0 {
+            return Err(Error::ComputationError {
+                message: "solar event search exceeded its evaluation limit",
+            });
+        }
+        self.remaining -= 1;
         (self.function)(time)
     }
 
-    fn find(&self, start: f64, end: f64, a: f64, b: f64) -> Result<Option<f64>> {
+    fn find(&mut self, start: f64, end: f64, a: f64, b: f64) -> Result<Option<f64>> {
         let width = end - start;
         let slope = (b - a) / width;
         let slope_error = self.curvature * width / 2.0 + 2.0 * ROUNDING_ERROR / width;
@@ -508,7 +525,7 @@ impl<F: Fn(f64) -> Result<f64>> CrossingSearch<F> {
     }
 
     #[allow(clippy::while_float)] // The projection bounds the number of refinement steps.
-    fn refine(&self, mut start: f64, mut end: f64, mut a: f64, mut b: f64) -> Result<f64> {
+    fn refine(&mut self, mut start: f64, mut end: f64, mut a: f64, mut b: f64) -> Result<f64> {
         // ITP (Oliveira & Takahashi): https://doi.org/10.1145/3423597.
         // Use k1 = 0.2 / initial width, k2 = 2, n0 = 1. The projection allows
         // at most one extra iteration over bisection while favouring interpolation.

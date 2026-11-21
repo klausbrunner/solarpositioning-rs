@@ -9,7 +9,7 @@
 //! Positions are unrefracted, topocentric solar-centre positions at sea level.
 //! [`Horizon::SunriseSunset`] includes the conventional allowance for refraction and
 //! solar radius; other horizons use their specified geometric elevation. Brackets
-//! are refined to one millisecond, which does not imply equivalent observed-event
+//! are refined to 100 ms, which does not imply equivalent observed-event
 //! accuracy. Crossings closer together need not be distinguished.
 //! If the evaluation limit is reached, the search returns a computation error.
 //!
@@ -28,9 +28,11 @@ use {alloc::vec::Vec, core::ops::Range};
 #[cfg(feature = "chrono")]
 mod chrono;
 
-const TIME_TOLERANCE: f64 = 1.0 / 3_600_000.0;
-// Conservative allowance for Julian-date quantisation and floating-point evaluation.
-const ROUNDING_ERROR: f64 = 1e-8;
+const TIME_TOLERANCE: f64 = 0.1 / 3600.0;
+const POSITION_ROUNDOFF: f64 = 1e-12;
+const HOUR_ANGLE_ROUNDOFF: f64 = 1e-9;
+#[cfg(feature = "alloc")]
+const HORIZON_STATE_TOLERANCE: f64 = 1e-8;
 const MAX_SEARCH_EVALUATIONS: usize = 65_536;
 
 /// Coordinates needed by the event search, in degrees.
@@ -170,7 +172,7 @@ where
     ///
     /// Use consecutive UTC midnights for a UTC calendar day, or supply other date
     /// boundaries. Unlike bounded next-event searches, collection includes its
-    /// start and excludes its end (to one-millisecond resolution).
+    /// start and excludes its end (to 100 ms resolution).
     ///
     /// # Errors
     /// Has the same validation and provider errors as [`Self::next_rise_from_julian`].
@@ -214,8 +216,11 @@ where
         let horizon = sin(horizon.elevation_angle().to_radians());
         // Daily rotation contributes about (2*pi/24)^2*cos(latitude) = 0.069*cos(latitude).
         // Round up to 0.1, with a floor for slower solar motion and parallax at the poles.
-        let curvature = 0.1 * abs(cos(location.latitude.to_radians())) + 0.0001;
-        self.search(start, end, delta_t, curvature, |jd| {
+        let cos_latitude = abs(cos(location.latitude.to_radians()));
+        let curvature = 0.1 * cos_latitude + 0.0001;
+        // The hour-angle term in sine of elevation is multiplied by cos(latitude).
+        let roundoff = POSITION_ROUNDOFF + HOUR_ANGLE_ROUNDOFF * cos_latitude;
+        self.search(start, end, delta_t, curvature, roundoff, |jd| {
             Ok(direction
                 * (sin(self.position(jd, location, delta_t)?.elevation.to_radians()) - horizon))
         })
@@ -229,7 +234,7 @@ where
         delta_t: f64,
     ) -> Result<Option<T>> {
         check_coordinates(0.0, longitude)?;
-        self.search(start, end, delta_t, 0.1, |jd| {
+        self.search(start, end, delta_t, 0.1, HOUR_ANGLE_ROUNDOFF, |jd| {
             Ok(sin(self
                 .position(
                     jd,
@@ -250,6 +255,7 @@ where
         end: T,
         delta_t: f64,
         curvature: f64,
+        roundoff: f64,
         position: impl Fn(f64) -> Result<f64>,
     ) -> Result<Option<T>> {
         self.check_interval(start, end, delta_t)?;
@@ -259,10 +265,11 @@ where
         }
         // Evaluate exactly the time that will be returned, including timestamp rounding.
         // Otherwise resuming at a returned crossing can rediscover it.
-        let julian_day = |t| start.at(end, t, hours).julian_day();
         let mut search = CrossingSearch {
-            function: |t| position(julian_day(t)),
+            julian_day: |t| start.at(end, t, hours).julian_day(),
+            position,
             curvature,
+            roundoff,
             remaining: MAX_SEARCH_EVALUATIONS,
         };
         let b = search.value(hours)?;
@@ -272,7 +279,7 @@ where
             let before = (hours - TIME_TOLERANCE).max(0.0);
             // The endpoint slope can differ from the chord slope by at most M*w/2.
             // Use the actual Julian dates to account for timestamp rounding.
-            let width = (julian_day(hours) - julian_day(before)) * 24.0;
+            let width = search.sample_width(before, hours);
             let curvature_margin = curvature * width * width / 2.0;
             let rounding_margin = 2.0 * f64::EPSILON;
             if -search.value(before)? > curvature_margin + rounding_margin {
@@ -316,15 +323,22 @@ where
         } else {
             start
         };
+        let start_jd = start.julian_day();
+        let end_jd = end.julian_day();
         let mut events = Vec::new();
         while let Some(time) = next(cursor)? {
-            if time >= end {
+            // A timestamp that rounds to the boundary belongs to the following date.
+            let jd = time.julian_day();
+            if jd >= end_jd {
                 break;
             }
-            if time >= start {
-                events.push(time);
-            }
             cursor = time;
+            if jd >= start_jd {
+                if cursor < start {
+                    cursor = start;
+                }
+                events.push(cursor);
+            }
         }
         Ok(events)
     }
@@ -361,7 +375,7 @@ where
     ) -> Result<Events<T>> {
         check_elevation_angle(horizon.elevation_angle())?;
         let difference = initial - sin(horizon.elevation_angle().to_radians());
-        let state_at_start = if abs(difference) <= ROUNDING_ERROR {
+        let state_at_start = if abs(difference) <= HORIZON_STATE_TOLERANCE {
             HorizonState::OnHorizon
         } else if difference > 0.0 {
             HorizonState::Above
@@ -474,13 +488,19 @@ impl SearchTime for f64 {
     }
 }
 
-struct CrossingSearch<F> {
-    function: F,
+struct CrossingSearch<J, F> {
+    julian_day: J,
+    position: F,
     curvature: f64,
+    roundoff: f64,
     remaining: usize,
 }
 
-impl<F: Fn(f64) -> Result<f64>> CrossingSearch<F> {
+impl<J: Fn(f64) -> f64, F: Fn(f64) -> Result<f64>> CrossingSearch<J, F> {
+    fn sample_width(&self, start: f64, end: f64) -> f64 {
+        ((self.julian_day)(end) - (self.julian_day)(start)) * 24.0
+    }
+
     fn value(&mut self, time: f64) -> Result<f64> {
         if self.remaining == 0 {
             return Err(Error::ComputationError {
@@ -488,34 +508,37 @@ impl<F: Fn(f64) -> Result<f64>> CrossingSearch<F> {
             });
         }
         self.remaining -= 1;
-        (self.function)(time)
+        (self.position)((self.julian_day)(time))
     }
 
     fn find(&mut self, start: f64, end: f64, a: f64, b: f64) -> Result<Option<f64>> {
-        let width = end - start;
-        let slope = (b - a) / width;
-        let slope_error = self.curvature * width / 2.0 + 2.0 * ROUNDING_ERROR / width;
         // Standard interpolation bounds: slope error M*w/2, chord error M*w*w/8.
-        // https://dlmf.nist.gov/3.3.E5. Discard only intervals that cannot rise
-        // through zero; otherwise subdivide, searching the earlier half first.
-        if slope + slope_error <= 0.0
+        // https://dlmf.nist.gov/3.3.E5. Use the actual Julian-date sample spacing,
+        // so the margin accounts for position roundoff alone.
+        let width = self.sample_width(start, end);
+        let curvature_width_squared = self.curvature * width * width;
+        let slope_roundoff = 2.0 * self.roundoff;
+        let slope_margin = curvature_width_squared / 2.0 + slope_roundoff;
+        let change = b - a;
+        if change <= -slope_margin
             || ((a > 0.0) == (b > 0.0)
-                && abs(a).min(abs(b)) > self.curvature * width * width / 8.0 + ROUNDING_ERROR)
+                && abs(a).min(abs(b)) > curvature_width_squared / 8.0 + self.roundoff)
         {
             return Ok(None);
         }
-        if a < 0.0 && b >= 0.0 && slope > slope_error {
+        if a < 0.0 && b >= 0.0 && change > slope_margin {
             return self.refine(start, end, a, b).map(Some);
         }
-        if width <= TIME_TOLERANCE {
+        let duration = end - start;
+        if duration <= TIME_TOLERANCE {
             return Ok((a < 0.0 && b > 0.0).then_some(end));
         }
-        let mut middle = start + width / 2.0;
+        let mut middle = start + duration / 2.0;
         let mut m = self.value(middle)?;
         // Keep a shallow crossing inside a bracket instead of splitting at zero.
         // Stay strictly inside the interval so both recursive searches progress.
         if m == 0.0 && (a != 0.0 || b != 0.0) {
-            middle += TIME_TOLERANCE.min(width / 4.0);
+            middle += TIME_TOLERANCE.min(duration / 4.0);
             m = self.value(middle)?;
         }
         if let Some(left) = self.find(start, middle, a, m)? {

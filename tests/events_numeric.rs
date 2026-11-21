@@ -6,6 +6,7 @@ const ORIGIN: Location = Location {
     latitude: 0.0,
     longitude: 0.0,
 };
+const CROSSING_TOLERANCE_SECONDS: f64 = 0.1001;
 
 fn find_all(
     mut start: f64,
@@ -64,8 +65,8 @@ fn finds_known_crossings_and_rejects_tangencies() {
             let days = (-2.0 * horizon.to_radians().sin()).sqrt().asin() / std::f64::consts::PI;
             assert_eq!(rises.len(), 1);
             assert_eq!(sets.len(), 1);
-            assert!((rises[0] - (2_460_390.0 - days)).abs() * 86400.0 < 0.0011);
-            assert!((sets[0] - (2_460_390.0 + days)).abs() * 86400.0 < 0.0011);
+            assert!((rises[0] - (2_460_390.0 - days)).abs() * 86400.0 < CROSSING_TOLERANCE_SECONDS);
+            assert!((sets[0] - (2_460_390.0 + days)).abs() * 86400.0 < CROSSING_TOLERANCE_SECONDS);
         }
     }
 }
@@ -96,11 +97,75 @@ fn preserves_shallow_crossings_at_subdivision_points_and_endpoints() {
             let start = root - seconds / 86400.0;
             let end = root + seconds / 86400.0;
             let event = search(start, end).unwrap().unwrap();
-            assert!((event - root).abs() * 86400.0 < 0.0011);
+            assert!((event - root).abs() * 86400.0 < CROSSING_TOLERANCE_SECONDS);
             assert!(search(event, end).unwrap().is_none());
             assert_eq!(search(start, root).unwrap(), Some(root));
             assert!(search(root, end).unwrap().is_none());
         }
+    }
+}
+
+#[test]
+fn polar_solstice_distinguishes_a_near_miss_from_shallow_crossings() {
+    let solstice = 2_460_482.365_7;
+    let pole = Location {
+        latitude: 90.0,
+        longitude: 0.0,
+    };
+    let delta_t = 69.184;
+    let elevation = SolarPositions::new()
+        .at_from_julian(JulianDate::new(solstice, delta_t).unwrap(), pole, 0.0, None)
+        .unwrap()
+        .elevation_angle();
+    let (start, end) = (solstice - 0.5, solstice + 0.5);
+    let events = SolarEvents::new();
+    let crossings = |angle| {
+        let horizon = Horizon::Custom(angle);
+        (
+            events
+                .next_rise_from_julian(start, end, pole, delta_t, horizon)
+                .unwrap(),
+            events
+                .next_set_from_julian(start, end, pole, delta_t, horizon)
+                .unwrap(),
+        )
+    };
+    assert_eq!(crossings(elevation + 1e-7), (None, None));
+    let (rise, set) = crossings(elevation - 1e-7);
+    assert!(rise.unwrap() < solstice && solstice < set.unwrap());
+}
+
+#[test]
+#[cfg(feature = "alloc")]
+fn standard_sunrise_resolves_near_polar_grazing() {
+    let start = 2_460_387.5; // 2024-03-18 UTC.
+    // At these locations the daily and seasonal elevation changes nearly cancel at sunrise.
+    for (events, latitude, longitude) in [
+        (
+            SolarEvents::new(),
+            89.937_067_442_664_41,
+            -97.934_859_158_695_72,
+        ),
+        (
+            SolarEvents::grena3(),
+            89.937_074_586_850_51,
+            -98.241_912_664_560_87,
+        ),
+    ] {
+        let day = events
+            .for_interval_from_julian(
+                start,
+                start + 1.0,
+                Location {
+                    latitude,
+                    longitude,
+                },
+                69.184,
+                Horizon::SunriseSunset,
+            )
+            .unwrap();
+        assert_eq!(day.rises.len(), 1);
+        assert!(day.sets.is_empty());
     }
 }
 
@@ -119,7 +184,7 @@ fn flat_search_reports_an_exhausted_evaluation_limit() {
     assert_eq!(
         calculator.next_rise_from_julian(
             2_460_390.0,
-            2_460_390.0 + 120.0 / 86400.0,
+            2_460_390.0 + 2.0 / 24.0,
             ORIGIN,
             0.0,
             Horizon::Custom(0.0),
@@ -153,7 +218,7 @@ fn grena_preserves_shallow_polar_crossing_in_short_windows() {
             .next_rise_from_julian(start, end, location, 0.0, Horizon::Custom(horizon))
             .unwrap()
             .unwrap();
-        assert!((rise - root).abs() * 86400.0 < 0.0011);
+        assert!((rise - root).abs() * 86400.0 < CROSSING_TOLERANCE_SECONDS);
         assert!(
             calculator
                 .next_rise_from_julian(rise, end, location, 0.0, Horizon::Custom(horizon))
@@ -187,7 +252,7 @@ fn preserves_bounds_and_does_not_repeat_returned_events() {
         .next_transit_from_julian(start, transit, 0.0, 69.184)
         .unwrap()
         .unwrap();
-    assert!((bounded - transit).abs() * 86400.0 < 0.0011);
+    assert!((bounded - transit).abs() * 86400.0 < CROSSING_TOLERANCE_SECONDS);
     assert!(
         calculator
             .next_transit_from_julian(transit, end, 0.0, 69.184)
@@ -196,7 +261,12 @@ fn preserves_bounds_and_does_not_repeat_returned_events() {
     );
     assert!(
         calculator
-            .next_transit_from_julian(start, transit - 0.002 / 86400.0, 0.0, 69.184)
+            .next_transit_from_julian(
+                start,
+                transit - CROSSING_TOLERANCE_SECONDS / 86400.0,
+                0.0,
+                69.184,
+            )
             .unwrap()
             .is_none()
     );
@@ -280,7 +350,9 @@ fn custom_provider_receives_time_coordinates_and_delta_t() {
             17.0,
         ),
     ] {
-        assert!(((time - start) * 86400.0 - (hour * 3600.0 - 60.0)).abs() < 0.0011);
+        assert!(
+            ((time - start) * 86400.0 - (hour * 3600.0 - 60.0)).abs() < CROSSING_TOLERANCE_SECONDS
+        );
     }
     assert!(
         calculator
@@ -377,7 +449,11 @@ fn grena_search_handles_zenith_roundoff() {
     for direction in [-1.0, 1.0] {
         let elevation = SolarPositions::grena3()
             .at_from_julian(
-                JulianDate::new(rise + direction * 0.002 / 86400.0, 69.184).unwrap(),
+                JulianDate::new(
+                    rise + direction * CROSSING_TOLERANCE_SECONDS / 86400.0,
+                    69.184,
+                )
+                .unwrap(),
                 location,
                 0.0,
                 None,

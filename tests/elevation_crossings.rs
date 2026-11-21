@@ -4,6 +4,7 @@ use solar_positioning::{
 };
 
 const DELTA_T: f64 = 69.184;
+const CROSSING_TOLERANCE_SECONDS: f64 = 0.1001;
 const LOCATION: Location = Location {
     latitude: 52.0,
     longitude: 13.4,
@@ -71,8 +72,9 @@ fn assert_transitions(
     for rising in [true, false] {
         if let Some(event) = crossing(positions, rising, start, start + 1.0, location, target) {
             assert!(event > start && event <= start + 1.0);
-            let before = elevation(positions, event - 0.1 / 86400.0, location, target);
-            let after = elevation(positions, event + 0.1 / 86400.0, location, target);
+            let margin = CROSSING_TOLERANCE_SECONDS / 86400.0;
+            let before = elevation(positions, event - margin, location, target);
+            let after = elevation(positions, event + margin, location, target);
             assert!(
                 crosses(before, after, target.angle, rising),
                 "{positions:?}, {location:?}, {target:?}: {before} -> {after}"
@@ -163,7 +165,7 @@ fn spa_includes_an_endpoint_at_the_reported_elevation() {
 fn spa_crossings_use_observer_height() {
     let positions = SolarPositions::new();
     let location = Location {
-        latitude: 63.0,
+        latitude: 66.559,
         ..LOCATION
     };
     let target = ElevationTarget {
@@ -174,11 +176,12 @@ fn spa_crossings_use_observer_height() {
     let start = JulianDate::from_utc(2024, 12, 21, 0, 0, 0.0, DELTA_T)
         .unwrap()
         .julian_date();
-    // Shallow winter crossings make the height effect exceed the 1 ms search resolution.
+    // Grazing winter crossings make the height effect exceed the search resolution.
     for rising in [true, false] {
         let event = crossing(positions, rising, start, start + 1.0, location, target).unwrap();
-        let before = elevation(positions, event - 0.0011 / 86400.0, location, target);
-        let after = elevation(positions, event + 0.0011 / 86400.0, location, target);
+        let margin = CROSSING_TOLERANCE_SECONDS / 86400.0;
+        let before = elevation(positions, event - margin, location, target);
+        let after = elevation(positions, event + margin, location, target);
         assert!(
             crosses(before, after, target.angle, rising),
             "height-adjusted crossing: {before} -> {after}, rising={rising}"
@@ -202,11 +205,11 @@ fn unrefracted_sea_level_crossings_match_existing_events_and_resume() {
                 let event = crossing(positions, rising, START, END, LOCATION, target).unwrap();
                 assert!(
                     (event - standard_crossing(events, rising, START, END, angle)).abs() * 86400.0
-                        < 0.0011
+                        < CROSSING_TOLERANCE_SECONDS
                 );
                 assert!(crossing(positions, rising, event, END, LOCATION, target).is_none());
                 let bounded = crossing(positions, rising, START, event, LOCATION, target).unwrap();
-                assert!((bounded - event).abs() * 86400.0 < 0.0011);
+                assert!((bounded - event).abs() * 86400.0 < CROSSING_TOLERANCE_SECONDS);
             }
         }
     }
@@ -227,7 +230,7 @@ fn thresholds_inside_refraction_jumps_cross_at_the_geometric_cutoff() {
             let event = crossing(positions, rising, START, END, LOCATION, target).unwrap();
             assert!(
                 (event - standard_crossing(events, rising, START, END, cutoff)).abs() * 86400.0
-                    < 0.0011
+                    < CROSSING_TOLERANCE_SECONDS
             );
         }
         assert_transitions(positions, START, LOCATION, target);
@@ -366,12 +369,12 @@ fn chrono_matches_numeric_search_and_preserves_dst_offsets() {
                         - numeric)
                         .abs()
                         * 86400.0
-                        < 0.0011
+                        < CROSSING_TOLERANCE_SECONDS
                 );
                 assert_eq!(event.fixed_offset().offset().local_minus_utc(), offset);
                 let before = positions
                     .at(
-                        &(event - Duration::milliseconds(100)),
+                        &(event - Duration::milliseconds(101)),
                         LOCATION,
                         height,
                         DELTA_T,
@@ -381,7 +384,7 @@ fn chrono_matches_numeric_search_and_preserves_dst_offsets() {
                     .elevation_angle();
                 let after = positions
                     .at(
-                        &(event + Duration::milliseconds(100)),
+                        &(event + Duration::milliseconds(101)),
                         LOCATION,
                         height,
                         DELTA_T,

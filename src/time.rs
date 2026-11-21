@@ -309,9 +309,12 @@ impl JulianDate {
 /// Shared by position calculations and event searches. Callers reject leap seconds.
 #[cfg(feature = "chrono")]
 pub(crate) fn datetime_to_julian<Tz: TimeZone>(datetime: &chrono::DateTime<Tz>) -> f64 {
-    2_440_587.5
-        + datetime.timestamp() as f64 / SECONDS_PER_DAY
-        + f64::from(datetime.timestamp_subsec_nanos()) / 86400e9
+    let timestamp = datetime.timestamp();
+    // Add the fractional day as a unit so rounding cannot reverse adjacent instants.
+    let midnight = 2_440_587.5 + timestamp.div_euclid(86_400) as f64;
+    let seconds =
+        timestamp.rem_euclid(86_400) as f64 + f64::from(datetime.timestamp_subsec_nanos()) / 1e9;
+    midnight + seconds / SECONDS_PER_DAY
 }
 
 /// Meeus's Julian date calculation, applying Gregorian rules to every year.
@@ -437,6 +440,14 @@ mod tests {
                 assert_eq!(JulianDate::from_datetime(&time, 69.184).unwrap(), jd);
             }
         }
+    }
+
+    #[cfg(feature = "chrono")]
+    #[test]
+    fn chrono_julian_date_is_monotone_across_a_second_boundary() {
+        let before = chrono::DateTime::from_timestamp(90_000_000_023, 999_999_999).unwrap();
+        let after = chrono::DateTime::from_timestamp(90_000_000_024, 0).unwrap();
+        assert!(datetime_to_julian(&before) <= datetime_to_julian(&after));
     }
 
     #[cfg(feature = "chrono")]

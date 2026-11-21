@@ -156,6 +156,10 @@ pub use crate::types::{ElevationTarget, Horizon, Location, RefractionCorrection,
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
+// Cargo can enable both math features. In that case the math helpers prefer std.
+#[cfg(all(feature = "std", feature = "libm"))]
+use libm as _;
+
 // Algorithm modules
 pub mod events;
 mod grena3;

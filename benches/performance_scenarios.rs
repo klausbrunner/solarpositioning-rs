@@ -246,13 +246,15 @@ fn benchmark_elevation_crossings(c: &mut Criterion) {
         // Just above the North Pole's June 2024 maximum elevation.
         let horizon = Horizon::Custom(23.43603008);
         b.iter(|| {
-            events.next_rise_from_julian(
-                black_box(solstice - 0.5),
-                black_box(solstice + 0.5),
-                black_box(pole),
-                black_box(69.184),
-                black_box(horizon),
-            )
+            events
+                .next_rise_from_julian(
+                    black_box(solstice - 0.5),
+                    black_box(solstice + 0.5),
+                    black_box(pole),
+                    black_box(69.184),
+                    black_box(horizon),
+                )
+                .unwrap()
         });
     });
     group.finish();

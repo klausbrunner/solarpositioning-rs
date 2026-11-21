@@ -2,10 +2,14 @@
 
 ## Unreleased
 
+### Changed
+
+- Use 100 ms resolution for solar-event searches.
+
 ### Fixed
 
-- Share SPA elevation between positions and crossings, and check endpoints within the requested interval.
-- Return a computation error when an event search exceeds its evaluation limit.
+- Match crossing elevations to positions and handle interval endpoints consistently.
+- Resolve grazing events more efficiently and cap unresolved searches.
 
 ## [0.7.2] - 2026-10-19
 

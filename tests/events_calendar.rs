@@ -32,7 +32,7 @@ fn compare(expected: &[DateTime<Utc>], actual: &[DateTime<Utc>]) {
         "expected {expected:?}, got {actual:?}"
     );
     for (a, b) in expected.iter().zip(actual) {
-        assert!((*a - *b).abs() <= Duration::milliseconds(1), "{a} vs {b}");
+        assert!((*a - *b).abs() <= Duration::milliseconds(100), "{a} vs {b}");
     }
 }
 fn find_all(
@@ -145,10 +145,10 @@ fn grena_events_follow_grena_positions_at_all_horizons() {
         for (horizon, day) in days {
             for (events, direction) in [(&day.rises, 1.0), (&day.sets, -1.0)] {
                 for &time in events {
-                    // Check either side of the search's one-millisecond bracket.
+                    // Check either side of the 100 ms search bracket.
                     let before = SolarPositions::grena3()
                         .at(
-                            &(time - Duration::milliseconds(2)),
+                            &(time - Duration::milliseconds(101)),
                             Location {
                                 latitude: lat,
                                 longitude: lon,
@@ -161,7 +161,7 @@ fn grena_events_follow_grena_positions_at_all_horizons() {
                         .elevation_angle();
                     let after = SolarPositions::grena3()
                         .at(
-                            &(time + Duration::milliseconds(2)),
+                            &(time + Duration::milliseconds(101)),
                             Location {
                                 latitude: lat,
                                 longitude: lon,
@@ -179,7 +179,7 @@ fn grena_events_follow_grena_positions_at_all_horizons() {
             for time in day.transits {
                 let before = SolarPositions::grena3()
                     .at(
-                        &(time - Duration::milliseconds(2)),
+                        &(time - Duration::milliseconds(101)),
                         Location {
                             latitude: 0.0,
                             longitude: lon,
@@ -194,7 +194,7 @@ fn grena_events_follow_grena_positions_at_all_horizons() {
                     .sin();
                 let after = SolarPositions::grena3()
                     .at(
-                        &(time + Duration::milliseconds(2)),
+                        &(time + Duration::milliseconds(101)),
                         Location {
                             latitude: 0.0,
                             longitude: lon,
@@ -230,7 +230,7 @@ fn finds_seasonal_rise_at_both_poles() {
             .next_rise(&start, &end, location, DELTA_T, horizon)
             .unwrap()
             .unwrap();
-        for (offset, sign) in [(-10, -1.0), (10, 1.0)] {
+        for (offset, sign) in [(-101, -1.0), (101, 1.0)] {
             let time = JulianDate::new(jd(rise + Duration::milliseconds(offset)), DELTA_T).unwrap();
             let elevation = SolarPositions::new()
                 .at_from_julian(
@@ -379,7 +379,7 @@ fn historical_events_agree_with_positions() {
         assert_eq!((day.rises.len(), day.sets.len()), (1, 1));
         for (events, direction) in [(&day.rises, 1.0), (&day.sets, -1.0)] {
             for &time in events {
-                for offset in [-2, 2] {
+                for offset in [-101, 101] {
                     let position = SolarPositions::new()
                         .at(
                             &(time + Duration::milliseconds(offset)),
@@ -412,7 +412,7 @@ fn date_lookback_respects_the_tt_lower_bound() {
         .from_local_datetime(&date.and_hms_opt(0, 0, 0).unwrap())
         .unwrap();
     let end = start + Duration::days(1);
-    for delta_t in [-3600.0, -3599.9995, -3599.998] {
+    for delta_t in [-3600.0, -3599.95, -3599.8] {
         let day = calculator
             .for_date(date, &zone, ORIGIN, delta_t, Horizon::SunriseSunset)
             .unwrap();
@@ -435,7 +435,7 @@ fn date_lookback_respects_the_tt_lower_bound() {
             .zip(expected)
         {
             assert_eq!(events.len(), 1);
-            assert!((events[0] - time).abs() <= Duration::milliseconds(1));
+            assert!((events[0] - time).abs() <= Duration::milliseconds(100));
         }
     }
 }
@@ -525,7 +525,7 @@ fn splitting_searches_preserves_events_for_both_models() {
                 let whole = find_all(start, end, search);
                 let mut splits = vec![start + Duration::seconds(1 + i64::from(random() % 172798))];
                 for &event in &whole {
-                    for millis in [-2, 0, 2] {
+                    for millis in [-101, 0, 101] {
                         splits.push(event + Duration::milliseconds(millis));
                     }
                 }
@@ -541,7 +541,7 @@ fn splitting_searches_preserves_events_for_both_models() {
                     find_all_numeric(&calculator, jd(start), jd(end), location, horizon, kind);
                 assert_eq!(numeric.len(), whole.len());
                 for (&number, &time) in numeric.iter().zip(&whole) {
-                    assert!((number - jd(time)).abs() * 86400.0 < 0.002);
+                    assert!((number - jd(time)).abs() * 86400.0 < 0.1001);
                 }
             }
         }

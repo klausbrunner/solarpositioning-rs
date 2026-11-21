@@ -160,8 +160,10 @@ pub fn event_position(time: JulianDate, location: Location) -> Result<EventPosit
         longitude,
     } = location;
     let position = position(&time_dependent(time), latitude, longitude);
+    // Match the zenith-to-elevation conversion of the public position.
+    let zenith = (PI / 2.0 - position.elevation).to_degrees();
     Ok(EventPosition {
-        elevation: position.elevation.to_degrees(),
+        elevation: 90.0 - zenith,
         hour_angle: position.hour_angle.to_degrees(),
     })
 }

@@ -23,7 +23,7 @@ Both sides use fixed TT−UT1 = 69.184 s, label UT1 instants as UTC, and use app
 unrefracted topocentric solar-centre positions on WGS84 at sea level.
 
 Counts must match exactly. The rise/set tolerance is SPA's stated 0.0003° angular
-uncertainty divided by local elevation speed, plus 2 ms. Transit tolerance is one
+uncertainty divided by local elevation speed, plus 101 ms. Transit tolerance is one
 second. Very shallow polar crossings can differ by seconds despite small angular
 errors. The generator's five-minute sampling is sufficient for these selected
 cases; analytically known curves separately test close crossings and tangencies.

@@ -1,5 +1,5 @@
-use chrono::{DateTime, Duration, Utc};
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use jiff::{SignedDuration, Timestamp, civil::date, tz::TimeZone};
 use solar_positioning::{
     ElevationTarget, Horizon, Location, RefractionCorrection, SolarEvents, SolarPositions,
     time::JulianDate,
@@ -18,13 +18,13 @@ const REFRACTION: Option<RefractionCorrection> = Some(RefractionCorrection::stan
 
 fn benchmark_single_calculation(c: &mut Criterion) {
     let mut group = c.benchmark_group("single");
-    let time = "2023-06-21T12:00:00Z".parse::<DateTime<Utc>>().unwrap();
+    let time = "2023-06-21T12:00:00Z".parse::<Timestamp>().unwrap();
     for (name, positions) in MODELS {
         group.bench_function(name, |b| {
             b.iter(|| {
                 positions
                     .at(
-                        black_box(&time),
+                        black_box(time),
                         black_box(LOCATION),
                         black_box(0.0),
                         black_box(69.0),
@@ -40,12 +40,12 @@ fn benchmark_single_calculation(c: &mut Criterion) {
 fn benchmark_time_series_fixed_location(c: &mut Criterion) {
     let mut group = c.benchmark_group("time_series_fixed_location");
     group.sample_size(10);
-    let start = "2023-06-21T00:00:00Z".parse::<DateTime<Utc>>().unwrap();
+    let start = "2023-06-21T00:00:00Z".parse::<Timestamp>().unwrap();
     for count in [100_000_u32, 1_000_000] {
         group.throughput(Throughput::Elements(u64::from(count)));
         // Half-hour steps keep even the longest series within both models' validity ranges.
         let times: Vec<_> = (0..count)
-            .map(|i| start + Duration::minutes(i64::from(i) * 30))
+            .map(|i| start + SignedDuration::from_mins(i64::from(i) * 30))
             .collect();
         for (name, positions) in MODELS {
             group.bench_with_input(BenchmarkId::new(name, count), &times, |b, times| {
@@ -53,7 +53,7 @@ fn benchmark_time_series_fixed_location(c: &mut Criterion) {
                     for time in times {
                         black_box(
                             positions
-                                .at(black_box(time), black_box(LOCATION), 0.0, 69.0, REFRACTION)
+                                .at(black_box(*time), black_box(LOCATION), 0.0, 69.0, REFRACTION)
                                 .unwrap(),
                         );
                     }
@@ -67,7 +67,7 @@ fn benchmark_time_series_fixed_location(c: &mut Criterion) {
 fn benchmark_coordinate_sweep_fixed_time(c: &mut Criterion) {
     let mut group = c.benchmark_group("coordinate_sweep_fixed_time");
     group.sample_size(10);
-    let time = "2023-06-21T12:00:00Z".parse::<DateTime<Utc>>().unwrap();
+    let time = "2023-06-21T12:00:00Z".parse::<Timestamp>().unwrap();
     for grid_size in [200_u32, 1000] {
         let locations: Vec<_> = (0..grid_size)
             .flat_map(|i| {
@@ -79,7 +79,7 @@ fn benchmark_coordinate_sweep_fixed_time(c: &mut Criterion) {
             .collect();
         group.throughput(Throughput::Elements(locations.len() as u64));
         for (name, positions) in MODELS {
-            let prepared = positions.for_time(&time, 69.0).unwrap();
+            let prepared = positions.for_time(time, 69.0).unwrap();
             group.bench_with_input(
                 BenchmarkId::new(name, grid_size),
                 &locations,
@@ -89,7 +89,7 @@ fn benchmark_coordinate_sweep_fixed_time(c: &mut Criterion) {
                             black_box(
                                 positions
                                     .at(
-                                        black_box(&time),
+                                        black_box(time),
                                         black_box(*location),
                                         0.0,
                                         69.0,
@@ -123,7 +123,7 @@ fn benchmark_solar_events_multiple(c: &mut Criterion) {
     group.warm_up_time(std::time::Duration::from_secs(1));
     group.measurement_time(std::time::Duration::from_secs(4));
 
-    let datetime = "2023-06-21T12:00:00Z".parse::<DateTime<Utc>>().unwrap();
+    let date = date(2023, 6, 21);
     let lat = 37.7749;
     let lon = -122.4194;
 
@@ -155,8 +155,8 @@ fn benchmark_solar_events_multiple(c: &mut Criterion) {
             b.iter(|| {
                 solar_positioning::SolarEvents::new()
                     .for_date_multiple(
-                        black_box(datetime.date_naive()),
-                        &Utc,
+                        black_box(date),
+                        &TimeZone::UTC,
                         Location {
                             latitude: black_box(lat),
                             longitude: black_box(lon),
@@ -186,7 +186,7 @@ fn benchmark_preparation(c: &mut Criterion) {
 fn benchmark_mixed_coordinates_and_times(c: &mut Criterion) {
     let mut group = c.benchmark_group("mixed_coordinates_and_times");
     group.sample_size(10);
-    let start = "2023-06-21T00:00:00Z".parse::<DateTime<Utc>>().unwrap();
+    let start = "2023-06-21T00:00:00Z".parse::<Timestamp>().unwrap();
     // 500 locations × 2000 timestamps, preparing once per timestamp.
     let locations: Vec<_> = (0..500)
         .map(|i| Location {
@@ -194,13 +194,15 @@ fn benchmark_mixed_coordinates_and_times(c: &mut Criterion) {
             longitude: -179.9 + f64::from(i) * 359.8 / 500.0,
         })
         .collect();
-    let times: Vec<_> = (0..2000).map(|i| start + Duration::hours(i)).collect();
+    let times: Vec<_> = (0..2000)
+        .map(|i| start + SignedDuration::from_hours(i))
+        .collect();
     group.throughput(Throughput::Elements((locations.len() * times.len()) as u64));
     for (name, positions) in MODELS {
         group.bench_function(name, |b| {
             b.iter(|| {
                 for time in &times {
-                    let prepared = positions.for_time(black_box(time), 69.0).unwrap();
+                    let prepared = positions.for_time(black_box(*time), 69.0).unwrap();
                     for location in &locations {
                         black_box(prepared.at(black_box(*location), 0.0, REFRACTION).unwrap());
                     }

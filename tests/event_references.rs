@@ -1,20 +1,23 @@
 //! Independent reference events, shared with the Java implementation.
-#![cfg(all(feature = "chrono", feature = "alloc"))]
+#![cfg(all(feature = "jiff", feature = "alloc"))]
 
-use chrono::{DateTime, Duration, NaiveDate, NaiveTime, Utc};
-use solar_positioning::SolarPositions;
-use solar_positioning::{Horizon, Location, SolarEvents, time::JulianDate};
+use jiff::{
+    SignedDuration, Timestamp, ZonedDateTime,
+    civil::{Date, Time},
+    tz::TimeZone,
+};
+use solar_positioning::{Horizon, Location, SolarEvents, SolarPositions};
 
 const DELTA_T: f64 = 69.184;
 
-fn compare(expected: &[DateTime<Utc>], actual: &[DateTime<Utc>], tolerance: f64) {
+fn compare(expected: &[Timestamp], actual: &[ZonedDateTime], tolerance: f64) {
     assert_eq!(
         actual.len(),
         expected.len(),
         "expected {expected:?}, got {actual:?}"
     );
     for (reference, time) in expected.iter().zip(actual) {
-        let difference = (*time - *reference).num_microseconds().unwrap().abs() as f64 / 1e6;
+        let difference = (time.timestamp() - *reference).as_secs_f64().abs();
         assert!(
             difference <= tolerance,
             "{reference}: got {time}, error {difference}s > {tolerance}s"
@@ -22,7 +25,7 @@ fn compare(expected: &[DateTime<Utc>], actual: &[DateTime<Utc>], tolerance: f64)
     }
 }
 
-fn parse_events(text: &str) -> Vec<DateTime<Utc>> {
+fn parse_events(text: &str) -> Vec<Timestamp> {
     if text.is_empty() {
         Vec::new()
     } else {
@@ -30,20 +33,9 @@ fn parse_events(text: &str) -> Vec<DateTime<Utc>> {
     }
 }
 
-fn altitude(time: DateTime<Utc>, latitude: f64, longitude: f64) -> f64 {
-    let jd = 2_440_587.5
-        + time.timestamp() as f64 / 86400.0
-        + f64::from(time.timestamp_subsec_nanos()) / 86400e9;
+fn altitude(time: Timestamp, location: Location) -> f64 {
     SolarPositions::new()
-        .at_from_julian(
-            JulianDate::new(jd, DELTA_T).unwrap(),
-            Location {
-                latitude,
-                longitude,
-            },
-            0.0,
-            None,
-        )
+        .at(time, location, 0.0, DELTA_T, None)
         .unwrap()
         .elevation_angle()
 }
@@ -55,32 +47,31 @@ fn matches_independent_jpl_events() {
     let mut count = 0;
     for row in reader.records() {
         let row = row.unwrap();
-        let start: DateTime<Utc> = row[0].parse().unwrap();
-        let end: DateTime<Utc> = row[1].parse().unwrap();
-        let latitude = row[2].parse().unwrap();
-        let longitude = row[3].parse().unwrap();
+        let start: Timestamp = row[0].parse().unwrap();
+        let end: Timestamp = row[1].parse().unwrap();
+        let location = Location {
+            latitude: row[2].parse().unwrap(),
+            longitude: row[3].parse().unwrap(),
+        };
         let horizon = Horizon::Custom(row[4].parse().unwrap());
         let day = calculator
             .for_date(
-                start.date_naive(),
-                &Utc,
-                Location {
-                    latitude,
-                    longitude,
-                },
+                TimeZone::UTC.to_datetime(start).date(),
+                &TimeZone::UTC,
+                location,
                 DELTA_T,
                 horizon,
             )
             .unwrap();
-        assert_eq!(day.start, start);
-        assert_eq!(day.end, end);
+        assert_eq!(day.start.timestamp(), start);
+        assert_eq!(day.end.timestamp(), end);
         for (field, actual) in [(&row[5], &day.rises), (&row[6], &day.sets)] {
             let expected = parse_events(field);
             // SPA's uncertainty is angular. At shallow crossings, convert it to
             // a time tolerance using local elevation speed, without relaxing counts.
             let tolerance = expected.iter().fold(0.101_f64, |limit, &time| {
-                let speed = (altitude(time + Duration::seconds(1), latitude, longitude)
-                    - altitude(time - Duration::seconds(1), latitude, longitude))
+                let speed = (altitude(time + SignedDuration::from_secs(1), location)
+                    - altitude(time - SignedDuration::from_secs(1), location))
                 .abs()
                     / 2.0;
                 limit.max(0.0003 / speed + 0.101)
@@ -93,16 +84,13 @@ fn matches_independent_jpl_events() {
     assert_eq!(count, 56);
 }
 
-fn compare_minute(date: NaiveDate, expected: &str, actual: &[DateTime<Utc>]) {
-    let expected: Vec<_> = if expected.is_empty() {
-        Vec::new()
-    } else {
-        vec![
-            date.and_time(NaiveTime::parse_from_str(expected, "%H:%M").unwrap())
-                .and_utc(),
-        ]
-    };
-    compare(&expected, actual, 90.0);
+fn compare_minute(date: Date, expected: &str, actual: &[ZonedDateTime]) {
+    let expected = (!expected.is_empty()).then(|| {
+        TimeZone::UTC
+            .to_timestamp(date.to_datetime(expected.parse::<Time>().unwrap()))
+            .unwrap()
+    });
+    compare(expected.as_slice(), actual, 90.0);
 }
 
 #[test]
@@ -124,11 +112,11 @@ fn matches_usno_sunrise_and_twilight_tables() {
         let mut count = 0;
         for row in reader.records() {
             let row = row.unwrap();
-            let date = row[0].parse::<DateTime<Utc>>().unwrap().date_naive();
+            let date = TimeZone::UTC.to_datetime(row[0].parse().unwrap()).date();
             let day = calculator
                 .for_date(
                     date,
-                    &Utc,
+                    &TimeZone::UTC,
                     Location {
                         latitude: row[1].parse().unwrap(),
                         longitude: row[2].parse().unwrap(),

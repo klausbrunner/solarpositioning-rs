@@ -13,7 +13,7 @@
 //! accuracy. Crossings closer together need not be distinguished.
 //! If the evaluation limit is reached, the search returns a computation error.
 //!
-//! Numeric times are continuous UT Julian dates. Chrono helpers use a proleptic
+//! Numeric times are continuous UT Julian dates. Jiff helpers use a proleptic
 //! Gregorian calendar, approximating UT1 with UTC. Delta T (TT minus UT1, in seconds)
 //! is constant during a search. Both UT and TT must remain in the provider's range.
 
@@ -25,8 +25,8 @@ use core::ops::RangeInclusive;
 
 #[cfg(feature = "alloc")]
 use {alloc::vec::Vec, core::ops::Range};
-#[cfg(feature = "chrono")]
-mod chrono;
+#[cfg(feature = "jiff")]
+mod jiff;
 
 const TIME_TOLERANCE: f64 = 0.1 / 3600.0;
 const POSITION_ROUNDOFF: f64 = 1e-12;
@@ -117,7 +117,7 @@ where
 
     /// Finds the next rising crossing in `(start, end]`, using UT Julian dates.
     ///
-    /// Returns `None` when absent. This method needs neither chrono nor allocation.
+    /// Returns `None` when absent. This method needs neither Jiff nor allocation.
     ///
     /// # Errors
     /// Returns an error for invalid coordinates, horizon, interval or delta T, times
@@ -258,7 +258,7 @@ where
         roundoff: f64,
         position: impl Fn(f64) -> Result<f64>,
     ) -> Result<Option<T>> {
-        self.check_interval(start, end, delta_t)?;
+        check_interval(self.range, start, end, delta_t)?;
         let hours = start.hours_until(end);
         if hours == 0.0 {
             return Ok(None);
@@ -289,25 +289,6 @@ where
         Ok(crossing.map(|t| start.at(end, t, hours)))
     }
 
-    pub(crate) fn check_interval<T: SearchTime>(
-        &self,
-        start: T,
-        end: T,
-        delta_t: f64,
-    ) -> Result<()> {
-        if !delta_t.is_finite() || end < start {
-            return Err(invalid_time("invalid search interval or delta_t"));
-        }
-        for time in [start, end] {
-            if !time.in_range(self.range, delta_t) {
-                return Err(invalid_time(
-                    "search interval outside provider's supported years",
-                ));
-            }
-        }
-        Ok(())
-    }
-
     #[cfg(feature = "alloc")]
     fn collect<T: SearchTime>(
         &self,
@@ -318,7 +299,7 @@ where
     ) -> Result<Vec<T>> {
         // Include boundary crossings, without looking outside the provider's UT/TT range.
         let lookback = start.shift_hours(-TIME_TOLERANCE);
-        let mut cursor = if self.check_interval(lookback, end, delta_t).is_ok() {
+        let mut cursor = if check_interval(self.range, lookback, end, delta_t).is_ok() {
             lookback
         } else {
             start
@@ -352,7 +333,7 @@ where
         delta_t: f64,
     ) -> Result<(f64, Vec<T>)> {
         check_coordinates(location.latitude, location.longitude)?;
-        self.check_interval(interval.start, interval.end, delta_t)?;
+        check_interval(self.range, interval.start, interval.end, delta_t)?;
         let transits = self.collect(interval.start, interval.end, delta_t, |t| {
             self.transit(t, interval.end, location.longitude, delta_t)
         })?;
@@ -455,7 +436,26 @@ const fn invalid_time(message: &'static str) -> Error {
     Error::InvalidDateTime { message }
 }
 
-// Keep both numeric and chrono searches on the same algorithm, while evaluating
+pub(crate) fn check_interval<T: SearchTime>(
+    range: TimeRange,
+    start: T,
+    end: T,
+    delta_t: f64,
+) -> Result<()> {
+    if !delta_t.is_finite() || end < start {
+        return Err(invalid_time("invalid search interval or delta_t"));
+    }
+    for time in [start, end] {
+        if !time.in_range(range, delta_t) {
+            return Err(invalid_time(
+                "search interval outside provider's supported years",
+            ));
+        }
+    }
+    Ok(())
+}
+
+// Keep both numeric and timestamp searches on the same algorithm, while evaluating
 // the exact representation returned to their respective callers.
 pub(crate) trait SearchTime: Copy + PartialOrd {
     fn julian_day(self) -> f64;

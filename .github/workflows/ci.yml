@@ -54,7 +54,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       # Tests and benchmarks use stable; their dependencies require newer Rust.
       - run: cargo check --lib --all-features
-      - run: cargo check --lib --no-default-features --features libm,chrono,alloc
+      - run: cargo check --lib --no-default-features --features libm,jiff,alloc
 
   features:
     name: Feature Combinations
@@ -62,7 +62,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        features: [std, libm, 'std,chrono', 'libm,chrono', 'libm,alloc', 'libm,chrono,alloc']
+        features: [std, libm, 'std,jiff', 'libm,jiff', 'libm,alloc', 'libm,jiff,alloc']
     steps:
       - uses: actions/checkout@v7
       - uses: actions-rust-lang/setup-rust-toolchain@v2

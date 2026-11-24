@@ -2,16 +2,17 @@
 
 use super::{Model, SolarPositions};
 use crate::error::{check_coordinates, check_elevation_angle};
-use crate::events::SearchTime;
+use crate::events::{SearchTime, check_interval};
+use crate::time::JulianDate;
 use crate::{ElevationTarget, Error, Horizon, Location, Result, SolarEvents, grena3, spa};
-#[cfg(feature = "chrono")]
-use chrono::{DateTime, TimeZone, Utc};
+#[cfg(feature = "jiff")]
+use jiff::Timestamp;
 
 impl SolarPositions {
     /// Finds the next rising solar-centre elevation crossing in `(start, end]`.
     ///
     /// Uses continuous UT Julian dates and the same observation settings as positions.
-    /// Requires neither chrono nor allocation. Returns `None` when absent.
+    /// Requires neither Jiff nor allocation. Returns `None` when absent.
     /// Refraction cutoff jumps count as crossings.
     ///
     /// # Errors
@@ -47,56 +48,38 @@ impl SolarPositions {
 
     /// Finds the next rising solar-centre elevation crossing in `(start, end]`.
     ///
-    /// Returns the start's time zone. Cutoff jumps count as crossings.
+    /// Refraction cutoff jumps count as crossings.
     ///
     /// # Errors
     /// Has the same errors as [`Self::next_elevation_rise_from_julian`].
-    #[cfg(feature = "chrono")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
-    pub fn next_elevation_rise<Tz: TimeZone>(
+    #[cfg(feature = "jiff")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "jiff")))]
+    pub fn next_elevation_rise(
         &self,
-        start: &DateTime<Tz>,
-        end: &DateTime<Tz>,
+        start: Timestamp,
+        end: Timestamp,
         location: Location,
         delta_t: f64,
         target: ElevationTarget,
-    ) -> Result<Option<DateTime<Tz>>> {
-        let zone = start.timezone();
-        self.elevation_crossing(
-            start.with_timezone(&Utc),
-            end.with_timezone(&Utc),
-            location,
-            delta_t,
-            target,
-            1.0,
-        )
-        .map(|event| event.map(|time| time.with_timezone(&zone)))
+    ) -> Result<Option<Timestamp>> {
+        self.elevation_crossing(start, end, location, delta_t, target, 1.0)
     }
 
     /// Finds the next setting solar-centre elevation crossing in `(start, end]`.
     ///
     /// # Errors
     /// Has the same errors as [`Self::next_elevation_rise_from_julian`].
-    #[cfg(feature = "chrono")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
-    pub fn next_elevation_set<Tz: TimeZone>(
+    #[cfg(feature = "jiff")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "jiff")))]
+    pub fn next_elevation_set(
         &self,
-        start: &DateTime<Tz>,
-        end: &DateTime<Tz>,
+        start: Timestamp,
+        end: Timestamp,
         location: Location,
         delta_t: f64,
         target: ElevationTarget,
-    ) -> Result<Option<DateTime<Tz>>> {
-        let zone = start.timezone();
-        self.elevation_crossing(
-            start.with_timezone(&Utc),
-            end.with_timezone(&Utc),
-            location,
-            delta_t,
-            target,
-            -1.0,
-        )
-        .map(|event| event.map(|time| time.with_timezone(&zone)))
+    ) -> Result<Option<Timestamp>> {
+        self.elevation_crossing(start, end, location, delta_t, target, -1.0)
     }
 
     fn elevation_crossing<T: SearchTime>(
@@ -117,17 +100,33 @@ impl SolarPositions {
                 value: target.height,
             });
         }
-        let events = SolarEvents::with_range(
-            |time, location| match self.model {
-                Model::Spa => spa::event_position_at_height(time, location, target.height),
-                Model::Grena3 => grena3::event_position(time, location),
-            },
-            self.model.range(),
-        );
-        events.check_interval(start, end, delta_t)?;
+        let range = self.model.range();
+        check_interval(range, start, end, delta_t)?;
         let Some(angle) = self.geometric_threshold(target)? else {
             return Ok(None);
         };
+        let endpoints = target
+            .refraction
+            .map(|_| [start.julian_day(), end.julian_day()]);
+        let events = SolarEvents::with_range(
+            |time: JulianDate, location| {
+                let mut position = match self.model {
+                    Model::Spa => spa::event_position_at_height(time, location, target.height),
+                    Model::Grena3 => grena3::event_position(time, location),
+                }?;
+                // Inversion can round an exact apparent match away from the threshold.
+                if endpoints.is_some_and(|days| days.contains(&time.julian_date()))
+                    && self
+                        .prepare(time)
+                        .at(location, target.height, target.refraction)
+                        .is_ok_and(|apparent| apparent.elevation_angle() == target.angle)
+                {
+                    position.elevation = angle;
+                }
+                Ok(position)
+            },
+            range,
+        );
         events.crossing(
             start,
             end,

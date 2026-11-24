@@ -134,31 +134,38 @@ fn crossings_match_position_predicates_across_settings_and_seasons() {
 }
 
 #[test]
-fn spa_includes_an_endpoint_at_the_reported_elevation() {
-    let positions = SolarPositions::new();
+fn crossing_at_the_reported_elevation_belongs_to_the_ending_interval() {
     let location = Location {
         latitude: 48.21,
         longitude: 16.37,
     };
-    let end = 2_460_389.75; // 2024-03-20 06:00 UTC.
-    let mut target = ElevationTarget {
-        angle: 0.0,
-        height: 190.0,
-        refraction: None,
-    };
-    target.angle = elevation(positions, end, location, target);
+    let window = 300.0 / 86400.0;
+    for (positions, height) in [
+        (SolarPositions::new(), 190.0),
+        (SolarPositions::grena3(), 0.0),
+    ] {
+        for (rising, split) in [(true, START + 0.25), (false, START + 0.625)] {
+            for refraction in [None, Some(RefractionCorrection::standard())] {
+                let mut target = ElevationTarget {
+                    angle: 0.0,
+                    height,
+                    refraction,
+                };
+                target.angle = elevation(positions, split, location, target);
 
-    assert_eq!(
-        crossing(
-            positions,
-            true,
-            end - 300.0 / 86400.0,
-            end,
-            location,
-            target
-        ),
-        Some(end)
-    );
+                assert_eq!(
+                    crossing(positions, rising, split - window, split, location, target),
+                    Some(split),
+                    "{positions:?}, {target:?}, rising={rising}"
+                );
+                assert_eq!(
+                    crossing(positions, rising, split, split + window, location, target),
+                    None,
+                    "{positions:?}, {target:?}, rising={rising}"
+                );
+            }
+        }
+    }
 }
 
 #[test]
@@ -327,18 +334,20 @@ fn missing_crossings_and_invalid_inputs_remain_distinct() {
     ));
 }
 
-#[cfg(feature = "chrono")]
+#[cfg(feature = "jiff")]
 #[test]
-fn chrono_matches_numeric_search_and_preserves_dst_offsets() {
-    use chrono::{Days, Duration, TimeZone};
-    use chrono_tz::Europe::Berlin;
-    for (month, day, offset) in [(3, 31, 7200), (10, 27, 3600)] {
-        let start = Berlin.with_ymd_and_hms(2024, month, day, 0, 0, 0).unwrap();
-        let end = start.checked_add_days(Days::new(1)).unwrap();
-        let a = JulianDate::from_datetime(&start, DELTA_T)
+fn timestamp_crossings_match_numeric_search_across_dst_changes() {
+    use jiff::{SignedDuration, civil::date, tz::TimeZone};
+    let zone = TimeZone::get("Europe/Berlin").unwrap();
+    for day in [date(2024, 3, 31), date(2024, 10, 27)] {
+        let start = zone.to_timestamp(day.at(0, 0, 0, 0)).unwrap();
+        let end = zone
+            .to_timestamp(day.tomorrow().unwrap().at(0, 0, 0, 0))
+            .unwrap();
+        let a = JulianDate::from_timestamp(start, DELTA_T)
             .unwrap()
             .julian_date();
-        let b = JulianDate::from_datetime(&end, DELTA_T)
+        let b = JulianDate::from_timestamp(end, DELTA_T)
             .unwrap()
             .julian_date();
         for (positions, height) in [
@@ -353,17 +362,17 @@ fn chrono_matches_numeric_search_and_preserves_dst_offsets() {
             for (rising, result) in [
                 (
                     true,
-                    positions.next_elevation_rise(&start, &end, LOCATION, DELTA_T, target),
+                    positions.next_elevation_rise(start, end, LOCATION, DELTA_T, target),
                 ),
                 (
                     false,
-                    positions.next_elevation_set(&start, &end, LOCATION, DELTA_T, target),
+                    positions.next_elevation_set(start, end, LOCATION, DELTA_T, target),
                 ),
             ] {
                 let event = result.unwrap().unwrap();
                 let numeric = crossing(positions, rising, a, b, LOCATION, target).unwrap();
                 assert!(
-                    (JulianDate::from_datetime(&event, DELTA_T)
+                    (JulianDate::from_timestamp(event, DELTA_T)
                         .unwrap()
                         .julian_date()
                         - numeric)
@@ -371,10 +380,9 @@ fn chrono_matches_numeric_search_and_preserves_dst_offsets() {
                         * 86400.0
                         < CROSSING_TOLERANCE_SECONDS
                 );
-                assert_eq!(event.fixed_offset().offset().local_minus_utc(), offset);
                 let before = positions
                     .at(
-                        &(event - Duration::milliseconds(101)),
+                        event - SignedDuration::from_millis(101),
                         LOCATION,
                         height,
                         DELTA_T,
@@ -384,7 +392,7 @@ fn chrono_matches_numeric_search_and_preserves_dst_offsets() {
                     .elevation_angle();
                 let after = positions
                     .at(
-                        &(event + Duration::milliseconds(101)),
+                        event + SignedDuration::from_millis(101),
                         LOCATION,
                         height,
                         DELTA_T,

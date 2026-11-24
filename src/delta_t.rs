@@ -12,8 +12,8 @@
 
 use crate::math::polynomial;
 use crate::{Error, Result};
-#[cfg(feature = "chrono")]
-use chrono::Datelike;
+#[cfg(feature = "jiff")]
+use jiff::civil::Date;
 
 /// Estimates ΔT for a given decimal year.
 ///
@@ -184,36 +184,15 @@ pub fn estimate_from_date(year: i32, month: u32) -> Result<f64> {
     estimate(decimal_year)
 }
 
-/// Estimates ΔT from any date-like type.
-///
-/// Borrows the date and extracts the year and month from any chrono type
-/// that implements `Datelike` (`DateTime`, `NaiveDateTime`, `NaiveDate`, etc.).
-/// Uses the midpoint of its calendar month, ignoring the day and time.
-///
-/// Returns seconds.
+/// Estimates ΔT in seconds at the midpoint of a Jiff date's calendar month.
 ///
 /// # Errors
 /// Has the same validation errors as [`estimate_from_date`].
-///
-/// # Example
-/// ```
-/// # use solar_positioning::delta_t;
-/// # use chrono::{DateTime, FixedOffset, NaiveDate};
-///
-/// // Works with DateTime
-/// let datetime = "2024-06-21T12:00:00-07:00".parse::<DateTime<FixedOffset>>().unwrap();
-/// let delta_t = delta_t::estimate_from_date_like(&datetime).unwrap();
-/// assert!(delta_t > 60.0 && delta_t < 80.0);
-///
-/// // Also works with NaiveDate
-/// let date = NaiveDate::from_ymd_opt(2024, 6, 21).unwrap();
-/// let delta_t2 = delta_t::estimate_from_date_like(&date).unwrap();
-/// assert_eq!(delta_t, delta_t2);
-/// ```
-#[cfg(feature = "chrono")]
-#[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
-pub fn estimate_from_date_like<D: Datelike>(date: &D) -> Result<f64> {
-    estimate_from_date(date.year(), date.month())
+#[cfg(feature = "jiff")]
+#[cfg_attr(docsrs, doc(cfg(feature = "jiff")))]
+#[allow(clippy::cast_sign_loss)] // Jiff months are 1 through 12.
+pub fn estimate_from_civil_date(date: Date) -> Result<f64> {
+    estimate_from_date(i32::from(date.year()), date.month() as u32)
 }
 
 #[cfg(test)]
@@ -322,10 +301,10 @@ mod tests {
             let expected = estimate(decimal_year).unwrap();
             assert_eq!(estimate_from_date(year, month).unwrap(), expected);
 
-            #[cfg(feature = "chrono")]
+            #[cfg(feature = "jiff")]
             for day in [1, 28] {
-                let date = chrono::NaiveDate::from_ymd_opt(year, month, day).unwrap();
-                assert_eq!(estimate_from_date_like(&date).unwrap(), expected);
+                let date = jiff::civil::date(year as i16, month as i8, day);
+                assert_eq!(estimate_from_civil_date(date).unwrap(), expected);
             }
         }
     }
@@ -360,41 +339,5 @@ mod tests {
         // Test invalid month
         assert!(estimate_from_date(2024, 13).is_err());
         assert!(estimate_from_date(2024, 0).is_err());
-    }
-
-    #[test]
-    #[cfg(feature = "chrono")]
-    fn test_delta_t_from_date_like() {
-        use chrono::{DateTime, FixedOffset, NaiveDate, Utc};
-
-        // Test with DateTime<FixedOffset>
-        let datetime_fixed = "2024-06-15T12:00:00-07:00"
-            .parse::<DateTime<FixedOffset>>()
-            .unwrap();
-        let delta_t_fixed = estimate_from_date_like(&datetime_fixed).unwrap();
-
-        // Test with DateTime<Utc>
-        let datetime_utc = "2024-06-15T19:00:00Z".parse::<DateTime<Utc>>().unwrap();
-        let delta_t_utc = estimate_from_date_like(&datetime_utc).unwrap();
-
-        // Test with NaiveDate
-        let naive_date = NaiveDate::from_ymd_opt(2024, 6, 15).unwrap();
-        let delta_t_naive_date = estimate_from_date_like(&naive_date).unwrap();
-
-        // Test with NaiveDateTime
-        let naive_datetime = naive_date.and_hms_opt(12, 0, 0).unwrap();
-        let delta_t_naive_datetime = estimate_from_date_like(&naive_datetime).unwrap();
-
-        // Should all be identical since we only use year/month
-        assert_eq!(delta_t_fixed, delta_t_utc);
-        assert_eq!(delta_t_fixed, delta_t_naive_date);
-        assert_eq!(delta_t_fixed, delta_t_naive_datetime);
-
-        // Should match estimate_from_date
-        let delta_t_date = estimate_from_date(2024, 6).unwrap();
-        assert_eq!(delta_t_fixed, delta_t_date);
-
-        // Verify reasonable range for 2024
-        assert!(delta_t_fixed > 60.0 && delta_t_fixed < 80.0);
     }
 }

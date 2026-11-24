@@ -1,4 +1,4 @@
-//! Core search guarantees, including builds without chrono or allocation.
+//! Core search guarantees, including builds without Jiff or allocation.
 use solar_positioning::SolarPositions;
 use solar_positioning::{Error, EventPosition, Horizon, Location, SolarEvents, time::JulianDate};
 

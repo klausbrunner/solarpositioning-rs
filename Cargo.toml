@@ -1,6 +1,6 @@
 [package]
 name = "solar-positioning"
-version = "0.7.2"
+version = "0.8.0-dev"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT"
@@ -28,20 +28,19 @@ pre-release-replacements = [
 
 [dependencies]
 # Optional dependencies
-chrono = { version = "0.4", default-features = false, optional = true }
+jiff = { version = "1", default-features = false, optional = true }
 libm = { version = "0.2", optional = true }
 
 [dev-dependencies]
 criterion = { version = "0.8", features = ["html_reports"] }
 csv = "1.4"
-chrono = { version = "0.4", features = ["clock"] }
-chrono-tz = "0.10"
+jiff = { version = "1", default-features = false, features = ["tzdb-bundle-always"] }
 
 [features]
-default = ["std", "chrono"]
+default = ["std", "jiff"]
 std = ["alloc"]
 alloc = []
-chrono = ["dep:chrono"]
+jiff = ["dep:jiff"]
 libm = ["dep:libm"]
 
 [profile.release]
@@ -57,18 +56,19 @@ debug = true
 [[example]]
 name = "basic_usage"
 path = "examples/basic_usage.rs"
-required-features = ["std", "chrono"]
+required-features = ["std", "jiff"]
 
 [[example]]
 name = "sunrise_sunset"
 path = "examples/sunrise_sunset.rs"
-required-features = ["std", "chrono"]
+required-features = ["std", "jiff"]
 
 [[example]]
 name = "grena3_comparison"
 path = "examples/grena3_comparison.rs"
-required-features = ["std", "chrono"]
+required-features = ["std", "jiff"]
 
 [[bench]]
 name = "performance_scenarios"
 harness = false
+required-features = ["std", "jiff"]

@@ -1,4 +1,4 @@
-//! Bounded event searches without chrono or heap allocation.
+//! Bounded event searches without Jiff or heap allocation.
 use solar_positioning::{Horizon, Location, SolarEvents, time::JulianDate};
 
 fn main() -> solar_positioning::Result<()> {

@@ -7,11 +7,14 @@
 
 use crate::math::floor;
 use crate::{Error, Result};
-#[cfg(feature = "chrono")]
-use chrono::TimeZone;
+#[cfg(feature = "jiff")]
+use jiff::{SignedDuration, Timestamp};
 
 /// Seconds per day (86,400)
 const SECONDS_PER_DAY: f64 = 86_400.0;
+
+#[cfg(feature = "jiff")]
+const UNIX_EPOCH_JD: f64 = 2_440_587.5;
 
 /// Julian Day Number for J2000.0 epoch (2000-01-01 12:00:00 UTC)
 const J2000_JDN: f64 = 2_451_545.0;
@@ -42,27 +45,18 @@ impl TimeRange {
             && (self.start..=self.end).contains(&(time + delta_t / SECONDS_PER_DAY))
     }
 
-    #[cfg(feature = "chrono")]
-    pub(crate) fn contains_datetime<Tz: TimeZone>(
-        self,
-        time: &chrono::DateTime<Tz>,
-        delta_t: f64,
-    ) -> bool {
-        use chrono::Duration;
-        if time.timestamp_subsec_nanos() >= 1_000_000_000 {
-            return false;
-        }
-        let start = ((self.start - 2_440_587.5) * SECONDS_PER_DAY) as i64;
-        let end = ((self.end - 2_440_587.5) * SECONDS_PER_DAY) as i64;
-        let fraction = Duration::nanoseconds(i64::from(time.timestamp_subsec_nanos()));
-        let elapsed = Duration::seconds(time.timestamp() - start) + fraction;
-        let remaining = Duration::seconds(end - time.timestamp()) - fraction;
+    #[cfg(feature = "jiff")]
+    pub(crate) fn contains_timestamp(self, time: Timestamp, delta_t: f64) -> bool {
+        let start = ((self.start - UNIX_EPOCH_JD) * SECONDS_PER_DAY) as i64;
+        let end = ((self.end - UNIX_EPOCH_JD) * SECONDS_PER_DAY) as i64;
+        let since_epoch = time.as_duration();
+        let elapsed = since_epoch - SignedDuration::from_secs(start);
+        let remaining = SignedDuration::from_secs(end) - since_epoch;
         // Compare durations to delta T before converting to Julian days, preserving boundaries.
-        let seconds = |d: Duration| d.num_seconds() as f64 + f64::from(d.subsec_nanos()) / 1e9;
-        elapsed >= Duration::zero()
-            && remaining >= Duration::zero()
-            && delta_t >= -seconds(elapsed)
-            && delta_t <= seconds(remaining)
+        !elapsed.is_negative()
+            && !remaining.is_negative()
+            && delta_t >= -elapsed.as_secs_f64()
+            && delta_t <= remaining.as_secs_f64()
     }
 }
 
@@ -150,31 +144,16 @@ impl JulianDate {
         })
     }
 
-    /// Creates a new Julian date from a timezone-aware chrono `DateTime`.
+    /// Creates a Julian date from a Jiff timestamp, approximating UT1 with UTC.
     ///
-    /// Uses the instant represented by the timestamp, independent of its time zone.
-    ///
-    /// # Arguments
-    /// * `datetime` - Timezone-aware date and time
-    /// * `delta_t` - ΔT in seconds (difference between TT and UT1)
-    ///
-    /// # Returns
-    /// Returns `Ok(JulianDate)` on success.
+    /// `delta_t` is TT minus UT1 in seconds.
     ///
     /// # Errors
-    /// Returns an error for a leap-second timestamp or non-finite `delta_t`.
-    #[cfg(feature = "chrono")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
-    pub fn from_datetime<Tz: TimeZone>(
-        datetime: &chrono::DateTime<Tz>,
-        delta_t: f64,
-    ) -> Result<Self> {
-        if datetime.timestamp_subsec_nanos() >= 1_000_000_000 {
-            return Err(Error::InvalidDateTime {
-                message: "leap-second timestamps are not supported",
-            });
-        }
-        Self::new(datetime_to_julian(datetime), delta_t)
+    /// Returns an error for non-finite `delta_t`.
+    #[cfg(feature = "jiff")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "jiff")))]
+    pub fn from_timestamp(time: Timestamp, delta_t: f64) -> Result<Self> {
+        Self::new(timestamp_to_julian(time), delta_t)
     }
 
     /// Creates a new Julian date from year, month, day, hour, minute, and second in UTC.
@@ -306,15 +285,16 @@ impl JulianDate {
     }
 }
 
-/// Shared by position calculations and event searches. Callers reject leap seconds.
-#[cfg(feature = "chrono")]
-pub(crate) fn datetime_to_julian<Tz: TimeZone>(datetime: &chrono::DateTime<Tz>) -> f64 {
-    let timestamp = datetime.timestamp();
+#[cfg(feature = "jiff")]
+pub(crate) fn timestamp_to_julian(time: Timestamp) -> f64 {
+    // Jiff returns signed subseconds, so floor the second for pre-epoch times.
+    let nanos = time.subsec_nanosecond();
+    let seconds = time.as_second() - i64::from(nanos < 0);
     // Add the fractional day as a unit so rounding cannot reverse adjacent instants.
-    let midnight = 2_440_587.5 + timestamp.div_euclid(86_400) as f64;
-    let seconds =
-        timestamp.rem_euclid(86_400) as f64 + f64::from(datetime.timestamp_subsec_nanos()) / 1e9;
-    midnight + seconds / SECONDS_PER_DAY
+    let midnight = UNIX_EPOCH_JD + seconds.div_euclid(86_400) as f64;
+    let second_of_day =
+        seconds.rem_euclid(86_400) as f64 + f64::from(nanos.rem_euclid(1_000_000_000)) / 1e9;
+    midnight + second_of_day / SECONDS_PER_DAY
 }
 
 /// Meeus's Julian date calculation, applying Gregorian rules to every year.
@@ -432,45 +412,47 @@ mod tests {
             let jd = JulianDate::from_utc(year, month, day, hour, 0, 0.0, 69.184).unwrap();
             assert_eq!(jd.julian_date(), expected, "{year}-{month}-{day}");
             assert_eq!(jd.delta_t(), 69.184);
-            #[cfg(feature = "chrono")]
+            #[cfg(feature = "jiff")]
             {
-                let time = chrono::Utc
-                    .with_ymd_and_hms(year, month, day, hour, 0, 0)
+                let time = jiff::tz::Offset::UTC
+                    .to_timestamp(jiff::civil::datetime(
+                        year as i16,
+                        month as i8,
+                        day as i8,
+                        hour as i8,
+                        0,
+                        0,
+                        0,
+                    ))
                     .unwrap();
-                assert_eq!(JulianDate::from_datetime(&time, 69.184).unwrap(), jd);
+                assert_eq!(JulianDate::from_timestamp(time, 69.184).unwrap(), jd);
             }
         }
     }
 
-    #[cfg(feature = "chrono")]
+    #[cfg(feature = "jiff")]
     #[test]
-    fn chrono_julian_date_is_monotone_across_a_second_boundary() {
-        let before = chrono::DateTime::from_timestamp(90_000_000_023, 999_999_999).unwrap();
-        let after = chrono::DateTime::from_timestamp(90_000_000_024, 0).unwrap();
-        assert!(datetime_to_julian(&before) <= datetime_to_julian(&after));
+    fn timestamp_to_julian_is_monotone_across_second_boundaries() {
+        for seconds in [-90_000_000_024, 0, 90_000_000_024] {
+            let after = Timestamp::from_second(seconds).unwrap();
+            let before = after - SignedDuration::from_nanos(1);
+            assert!(timestamp_to_julian(before) <= timestamp_to_julian(after));
+        }
     }
 
-    #[cfg(feature = "chrono")]
+    #[cfg(feature = "jiff")]
     #[test]
-    fn test_chrono_fractional_seconds_and_leap_second_rejection() {
-        use chrono::Timelike;
-        for year in [-2000, 0, 1500, 1582, 1970, 2024, 6000] {
-            let time = chrono::Utc
-                .with_ymd_and_hms(year, 2, 28, 23, 59, 59)
-                .unwrap()
-                .with_nanosecond(123_456_789)
+    fn timestamp_matches_numeric_fractional_seconds() {
+        for year in [-2000, 0, 1500, 1582, 1969, 1970, 2024, 6000] {
+            let time = jiff::tz::Offset::UTC
+                .to_timestamp(jiff::civil::datetime(year, 12, 31, 23, 59, 59, 123_456_789))
                 .unwrap();
             let numeric =
-                JulianDate::from_utc(year, 2, 28, 23, 59, 59.123_456_789, 69.184).unwrap();
-            let from_chrono = JulianDate::from_datetime(&time, 69.184).unwrap();
+                JulianDate::from_utc(i32::from(year), 12, 31, 23, 59, 59.123_456_789, 69.184)
+                    .unwrap();
+            let from_timestamp = JulianDate::from_timestamp(time, 69.184).unwrap();
             // The different arithmetic paths can round by one Julian-day ulp.
-            assert!((numeric.julian_date() - from_chrono.julian_date()).abs() < 1e-9);
+            assert!((numeric.julian_date() - from_timestamp.julian_date()).abs() < 1e-9);
         }
-        let leap_second = chrono::Utc
-            .with_ymd_and_hms(2016, 12, 31, 23, 59, 59)
-            .unwrap()
-            .with_nanosecond(1_000_000_000)
-            .unwrap();
-        assert!(JulianDate::from_datetime(&leap_second, 69.184).is_err());
     }
 }

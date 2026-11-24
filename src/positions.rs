@@ -6,8 +6,8 @@ use crate::{
     spa,
     time::{JulianDate, TimeRange},
 };
-#[cfg(feature = "chrono")]
-use chrono::{DateTime, TimeZone};
+#[cfg(feature = "jiff")]
+use jiff::Timestamp;
 
 mod elevation;
 
@@ -56,22 +56,21 @@ impl SolarPositions {
         }
     }
 
-    /// Calculates a position at a timezone-aware timestamp.
+    /// Calculates a position at a Jiff timestamp.
     ///
     /// `height` is in metres and `delta_t` is TT minus UT1 in seconds.
-    /// UTC approximates UT1. The timestamp is borrowed, so any chrono time zone works
-    /// without requiring the caller to copy or clone it.
+    /// UTC approximates UT1.
     ///
     /// # Errors
-    /// Returns an error for an invalid timestamp, non-finite delta T or height,
-    /// invalid coordinates, nonzero height with Grena3, a time outside the model's
-    /// UT/TT range, or a non-finite result.
-    #[cfg(feature = "chrono")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
+    /// Returns an error for non-finite delta T or height, invalid coordinates,
+    /// nonzero height with Grena3, a time outside the model's UT/TT range, or a
+    /// non-finite result.
+    #[cfg(feature = "jiff")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "jiff")))]
     #[inline]
-    pub fn at<Tz: TimeZone>(
+    pub fn at(
         &self,
-        time: &DateTime<Tz>,
+        time: Timestamp,
         location: Location,
         height: f64,
         delta_t: f64,
@@ -83,7 +82,7 @@ impl SolarPositions {
 
     /// Calculates a position from continuous UT Julian time, which includes delta T.
     ///
-    /// `height` is in metres. This method needs neither chrono nor allocation.
+    /// `height` is in metres. This method needs neither Jiff nor allocation.
     ///
     /// # Errors
     /// Returns an error for invalid coordinates, non-finite height, nonzero height
@@ -102,22 +101,16 @@ impl SolarPositions {
 
     /// Prepares time-dependent calculations for reuse at multiple locations.
     ///
-    /// `delta_t` is TT minus UT1 in seconds. The result owns its cached values and
-    /// does not borrow the timestamp or calculator.
+    /// `delta_t` is TT minus UT1 in seconds.
     ///
     /// # Errors
-    /// Returns an error for an invalid timestamp, non-finite delta T, or a time
-    /// outside the model's UT/TT range.
-    #[cfg(feature = "chrono")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
+    /// Returns an error for non-finite delta T or a time outside the model's UT/TT range.
+    #[cfg(feature = "jiff")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "jiff")))]
     #[inline]
-    pub fn for_time<Tz: TimeZone>(
-        &self,
-        time: &DateTime<Tz>,
-        delta_t: f64,
-    ) -> Result<PreparedPositions> {
-        let julian = JulianDate::from_datetime(time, delta_t)?;
-        if !self.model.range().contains_datetime(time, delta_t) {
+    pub fn for_time(&self, time: Timestamp, delta_t: f64) -> Result<PreparedPositions> {
+        let julian = JulianDate::from_timestamp(time, delta_t)?;
+        if !self.model.range().contains_timestamp(time, delta_t) {
             return Err(Error::InvalidDateTime {
                 message: "time outside model's supported years",
             });
@@ -127,7 +120,7 @@ impl SolarPositions {
 
     /// Prepares calculations from continuous UT Julian time, which includes delta T.
     ///
-    /// This method needs neither chrono nor allocation.
+    /// This method needs neither Jiff nor allocation.
     ///
     /// # Errors
     /// Returns an error if UT or TT is outside the selected model's supported years.

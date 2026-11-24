@@ -173,17 +173,17 @@ fn rejects_invalid_coordinates_and_heights() {
     }
 }
 
-#[cfg(feature = "chrono")]
+#[cfg(feature = "jiff")]
 #[test]
-fn chrono_matches_numeric_time_across_offsets_and_year_boundaries() {
-    use chrono::{DateTime, Duration, FixedOffset, Utc};
+fn timestamp_matches_numeric_time_across_offsets_and_year_boundaries() {
+    use jiff::{SignedDuration, Timestamp};
     for text in [
         "2024-06-21T08:30:12.345678+02:00",
         "2024-01-01T00:00:00.123456789+14:00",
         "2024-12-31T23:59:59.987654321-11:00",
     ] {
-        let time = text.parse::<DateTime<FixedOffset>>().unwrap();
-        let jd = JulianDate::from_datetime(&time, 69.184).unwrap();
+        let time = text.parse::<Timestamp>().unwrap();
+        let jd = JulianDate::from_timestamp(time, 69.184).unwrap();
         for (positions, height) in [
             (SolarPositions::new(), -50.0),
             (SolarPositions::grena3(), 0.0),
@@ -195,25 +195,13 @@ fn chrono_matches_numeric_time_across_offsets_and_year_boundaries() {
                 assert_eq!(
                     expected,
                     positions
-                        .at(&time, LOCATION, height, 69.184, refraction)
+                        .at(time, LOCATION, height, 69.184, refraction)
                         .unwrap()
                 );
                 assert_eq!(
                     expected,
                     positions
-                        .at(
-                            &time.with_timezone(&Utc),
-                            LOCATION,
-                            height,
-                            69.184,
-                            refraction
-                        )
-                        .unwrap()
-                );
-                assert_eq!(
-                    expected,
-                    positions
-                        .for_time(&time, 69.184)
+                        .for_time(time, 69.184)
                         .unwrap()
                         .at(LOCATION, height, refraction)
                         .unwrap()
@@ -222,7 +210,7 @@ fn chrono_matches_numeric_time_across_offsets_and_year_boundaries() {
                     expected,
                     positions
                         .at(
-                            &(time + Duration::milliseconds(500)),
+                            time + SignedDuration::from_millis(500),
                             LOCATION,
                             height,
                             69.184,
@@ -232,12 +220,8 @@ fn chrono_matches_numeric_time_across_offsets_and_year_boundaries() {
                 );
             }
             for delta_t in [f64::NAN, f64::INFINITY] {
-                assert!(positions.for_time(&time, delta_t).is_err());
-                assert!(
-                    positions
-                        .at(&time, LOCATION, height, delta_t, None)
-                        .is_err()
-                );
+                assert!(positions.for_time(time, delta_t).is_err());
+                assert!(positions.at(time, LOCATION, height, delta_t, None).is_err());
             }
         }
     }
@@ -281,51 +265,42 @@ fn numeric_positions_and_events_respect_model_date_ranges() {
     }
 }
 
-#[cfg(feature = "chrono")]
+#[cfg(feature = "jiff")]
 #[test]
-fn chrono_positions_and_events_preserve_exact_ut_and_tt_boundaries() {
-    use chrono::{Duration, FixedOffset, NaiveDate};
+fn timestamp_positions_and_events_preserve_exact_ut_and_tt_boundaries() {
+    use jiff::{SignedDuration, civil::date, tz::TimeZone};
     for (positions, events, first_year, last_year) in [
         (SolarPositions::new(), SolarEvents::new(), -2000, 6000),
         (SolarPositions::grena3(), SolarEvents::grena3(), 2010, 2110),
     ] {
-        let start = NaiveDate::from_ymd_opt(first_year, 1, 1)
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap()
-            .and_utc();
-        let end = NaiveDate::from_ymd_opt(last_year + 1, 1, 1)
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap()
-            .and_utc();
+        let start = TimeZone::UTC
+            .to_timestamp(date(first_year, 1, 1).at(0, 0, 0, 0))
+            .unwrap();
+        let end = TimeZone::UTC
+            .to_timestamp(date(last_year + 1, 1, 1).at(0, 0, 0, 0))
+            .unwrap();
         for (time, delta_t, valid) in [
             (start, 0.0, true),
             (end, 0.0, true),
-            (start - Duration::nanoseconds(1), 1.0, false),
-            (end + Duration::nanoseconds(1), -1.0, false),
+            (start - SignedDuration::from_nanos(1), 1.0, false),
+            (end + SignedDuration::from_nanos(1), -1.0, false),
             (start, -1.0, false),
             (end, 1.0, false),
-            (start + Duration::seconds(1), -1.0, true),
-            (end - Duration::seconds(1), 1.0, true),
-            (start + Duration::nanoseconds(999_999_999), -1.0, false),
-            (end - Duration::nanoseconds(999_999_999), 1.0, false),
+            (start + SignedDuration::from_secs(1), -1.0, true),
+            (end - SignedDuration::from_secs(1), 1.0, true),
+            (start + SignedDuration::from_nanos(999_999_999), -1.0, false),
+            (end - SignedDuration::from_nanos(999_999_999), 1.0, false),
         ] {
-            // A local year may differ from UT; validation must use the instant.
-            let zoned = time.with_timezone(&FixedOffset::west_opt(3600).unwrap());
             assert_eq!(
-                positions.for_time(&zoned, delta_t).is_ok(),
+                positions.for_time(time, delta_t).is_ok(),
                 valid,
                 "{time}, delta_t={delta_t}"
             );
             assert_eq!(
-                positions.at(&zoned, LOCATION, 0.0, delta_t, None).is_ok(),
+                positions.at(time, LOCATION, 0.0, delta_t, None).is_ok(),
                 valid
             );
-            assert_eq!(
-                events.next_transit(&zoned, &zoned, 0.0, delta_t).is_ok(),
-                valid
-            );
+            assert_eq!(events.next_transit(time, time, 0.0, delta_t).is_ok(), valid);
         }
     }
 }

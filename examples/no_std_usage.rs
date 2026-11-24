@@ -1,4 +1,4 @@
-//! Numeric positions without chrono. The library calls also work without std or allocation.
+//! Numeric positions without Jiff. The library calls also work without std or allocation.
 
 use solar_positioning::{Location, RefractionCorrection, SolarPositions, time::JulianDate};
 

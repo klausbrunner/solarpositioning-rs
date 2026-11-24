@@ -14,7 +14,7 @@
 //!
 //! ## Features
 //!
-//! - Multiple configurations: `std` or `no_std`, with or without `chrono`, math via native or `libm`
+//! - Multiple configurations: `std` or `no_std`, with or without Jiff, math via native or `libm`
 //! - Maximum accuracy: Authentic NREL SPA implementation, validated against reference data
 //! - Prepared calculations for many locations at one time, for both models
 //! - Thread-safe: Stateless, immutable data structures
@@ -23,22 +23,22 @@
 //!
 //! - `std` (default): Native math functions and `alloc`
 //! - `alloc` (enabled by `std`): Collect event lists, also available with `no_std`
-//! - `chrono` (default): Enable `DateTime<Tz>` based convenience API
+//! - `jiff` (default): Enable Jiff timestamps and, with `alloc`, local calendar events
 //! - `libm`: Use pure Rust math for `no_std` environments
 //!
 //! **Configuration examples:**
 //! ```toml
-//! # Default: std + chrono (most convenient)
-//! solar-positioning = "0.7"
+//! # Default: std + jiff
+//! solar-positioning = "0.8"
 //!
-//! # Minimal std (no chrono, smallest dependency tree)
-//! solar-positioning = { version = "0.7", default-features = false, features = ["std"] }
+//! # Minimal std (numeric API)
+//! solar-positioning = { version = "0.8", default-features = false, features = ["std"] }
 //!
-//! # no_std + chrono (embedded with DateTime support)
-//! solar-positioning = { version = "0.7", default-features = false, features = ["libm", "chrono"] }
+//! # no_std with timestamps
+//! solar-positioning = { version = "0.8", default-features = false, features = ["libm", "jiff"] }
 //!
 //! # Minimal no_std (pure numeric API)
-//! solar-positioning = { version = "0.7", default-features = false, features = ["libm"] }
+//! solar-positioning = { version = "0.8", default-features = false, features = ["libm"] }
 //! ```
 //!
 //! ## References
@@ -52,20 +52,20 @@
 //!
 //! ### Solar positions
 //! ```rust
-//! # #[cfg(feature = "chrono")] {
-//! use chrono::{DateTime, Utc};
+//! # #[cfg(feature = "jiff")] {
+//! use jiff::Timestamp;
 //! use solar_positioning::{Location, RefractionCorrection, SolarPositions};
 //!
-//! let time = "2026-06-21T12:00:00Z".parse::<DateTime<Utc>>().unwrap();
+//! let time = "2026-06-21T12:00:00Z".parse::<Timestamp>().unwrap();
 //! let location = Location { latitude: 48.21, longitude: 16.37 };
 //! let positions = SolarPositions::new();
 //! let position = positions.at(
-//!     &time, location, 190.0, 69.0, Some(RefractionCorrection::standard()),
+//!     time, location, 190.0, 69.0, Some(RefractionCorrection::standard()),
 //! )?;
 //! println!("Elevation: {:.3}°", position.elevation_angle());
 //!
 //! // Reuse the time-dependent calculations across locations.
-//! let prepared = positions.for_time(&time, 69.0)?;
+//! let prepared = positions.for_time(time, 69.0)?;
 //! let unrefracted = prepared.at(location, 0.0, None)?;
 //! # }
 //! # Ok::<(), solar_positioning::Error>(())
@@ -75,7 +75,7 @@
 //! for Grena3), delta T is in seconds, and `None` omits refraction. The prepared
 //! value owns its cached data and needs no allocation.
 //!
-//! ### Positions without chrono
+//! ### Positions with Julian dates
 //! ```rust
 //! use solar_positioning::{time::JulianDate, Location, SolarPositions};
 //!
@@ -90,20 +90,20 @@
 //!
 //! ### Solar events
 //! ```rust
-//! # #[cfg(all(feature = "chrono", feature = "alloc"))] {
-//! use chrono::{NaiveDate, Utc};
+//! # #[cfg(all(feature = "jiff", feature = "alloc"))] {
+//! use jiff::{civil::date, tz::TimeZone};
 //! use solar_positioning::{SolarEvents, Horizon, Location};
 //!
 //! let location = Location { latitude: 78.216667, longitude: 15.633333 };
 //! let day = SolarEvents::new().for_date(
-//!     NaiveDate::from_ymd_opt(2020, 4, 16).unwrap(), &Utc,
+//!     date(2020, 4, 16), &TimeZone::UTC,
 //!     location, 69.184, Horizon::SunriseSunset,
 //! ).unwrap();
 //! assert_eq!(day.rises.len(), 2); // A date need not contain just one solar cycle.
 //! # }
 //! ```
 //!
-//! Without chrono or allocation, use continuous UT Julian dates:
+//! Without Jiff, use continuous UT Julian dates:
 //! ```rust
 //! use solar_positioning::{SolarEvents, Horizon, Location};
 //!

@@ -1,9 +1,9 @@
 //! Validate SPA positions against NREL reference data.
 
-#![cfg(feature = "chrono")]
+#![cfg(feature = "jiff")]
 
-use chrono::{DateTime, Utc};
 use csv::ReaderBuilder;
+use jiff::Timestamp;
 use solar_positioning::{Location, RefractionCorrection, SolarPositions};
 use std::error::Error;
 use std::fs::File;
@@ -22,14 +22,14 @@ fn spa_matches_nrel_reference_data() -> Result<(), Box<dyn Error>> {
     let mut count = 0;
     for record in reader.records() {
         let record = record?;
-        let datetime = record[0].parse::<DateTime<Utc>>()?;
+        let datetime = record[0].parse::<Timestamp>()?;
         let latitude = record[1].parse()?;
         let longitude = record[2].parse()?;
         let expected_azimuth: f64 = record[3].parse()?;
         let expected_zenith: f64 = record[4].parse()?;
 
         let position = SolarPositions::new().at(
-            &datetime,
+            datetime,
             Location {
                 latitude,
                 longitude,
@@ -58,10 +58,10 @@ fn spa_matches_nrel_reference_data() -> Result<(), Box<dyn Error>> {
 
 #[test]
 fn spa_far_future_position() {
-    let datetime = "6000-06-21T12:00:00Z".parse::<DateTime<Utc>>().unwrap();
+    let datetime = "6000-06-21T12:00:00Z".parse::<Timestamp>().unwrap();
     let position = SolarPositions::new()
         .at(
-            &datetime,
+            datetime,
             Location {
                 latitude: 45.0,
                 longitude: 0.0,

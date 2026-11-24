@@ -4,11 +4,13 @@
 
 ### Changed
 
+- **BREAKING**: Replace Chrono with Jiff for timestamps and local calendar dates.
 - Use 100 ms resolution for solar-event searches.
 
 ### Fixed
 
-- Match crossing elevations to positions and handle interval endpoints consistently.
+- Match crossing elevations to positions.
+- Count exact crossings at the interval end, including with refraction.
 - Resolve grazing events more efficiently and cap unresolved searches.
 
 ## [0.7.2] - 2026-10-19

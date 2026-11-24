@@ -26,31 +26,32 @@ It combines interval subdivision with ITP root refinement.
 
 ## Usage
 
-Install the library and `chrono` for the timezone-aware examples:
+Install the library and Jiff for the timestamp and calendar examples:
 
 ```sh
-cargo add solar-positioning chrono
+cargo add solar-positioning jiff@1
 ```
 
 Requires Rust 1.85+. See the [API reference](https://docs.rs/solar-positioning)
 for method contracts and additional configurations.
 
 - `std` (default): Standard library, native math, and `alloc`
-- `chrono` (default): `DateTime` API (disable for the numeric API)
+- `jiff` (default): Jiff timestamps and, with `alloc`, local calendar events
 - `alloc` (enabled by `std`): Collect event lists, also available with `no_std`
 - `libm`: `no_std` support
 
 ### Solar position
 
 ```rust
-use chrono::{DateTime, FixedOffset};
+use jiff::ZonedDateTime;
 use solar_positioning::{Location, SolarPositions, delta_t};
 
-let time = "2025-06-21T12:00:00+02:00".parse::<DateTime<FixedOffset>>()?;
+let zoned = "2025-06-21T12:00:00+02:00[Europe/Vienna]".parse::<ZonedDateTime>()?;
+let time = zoned.timestamp();
 let location = Location { latitude: 48.21, longitude: 16.37 };
 let positions = SolarPositions::new();
-let deltat = delta_t::estimate_from_date_like(&time)?;
-let position = positions.at(&time, location, 190.0, deltat, None)?;
+let deltat = delta_t::estimate_from_civil_date(zoned.date())?;
+let position = positions.at(time, location, 190.0, deltat, None)?;
 
 println!("Azimuth: {:.1}°, elevation: {:.1}°",
     position.azimuth(), position.elevation_angle());
@@ -66,7 +67,7 @@ Reuse the time-dependent work from the position example:
 
 ```rust
 let locations = [location, Location { latitude: 52.52, longitude: 13.41 }];
-let prepared = positions.for_time(&time, deltat)?;
+let prepared = positions.for_time(time, deltat)?;
 for location in locations {
     let position = prepared.at(location, 0.0, None)?;
 }
@@ -75,16 +76,16 @@ for location in locations {
 ### Sunrise, sunset and twilight
 
 ```rust
-use chrono::{FixedOffset, NaiveDate};
+use jiff::{civil::date, tz::TimeZone};
 use solar_positioning::{SolarEvents, Horizon, Location, delta_t};
 
-let date = NaiveDate::from_ymd_opt(2026, 6, 21).unwrap();
-let zone = FixedOffset::east_opt(2 * 3600).unwrap();
+let date = date(2026, 6, 21);
+let zone = TimeZone::get("Europe/Vienna")?;
 let location = Location { latitude: 48.21, longitude: 16.37 };
 let calculator = SolarEvents::new();
 let day = calculator.for_date(
     date, &zone, location,
-    delta_t::estimate_from_date_like(&date)?, Horizon::SunriseSunset,
+    delta_t::estimate_from_civil_date(date)?, Horizon::SunriseSunset,
 )?;
 println!("Sunrises: {:?}", day.rises);
 println!("Transits: {:?}", day.transits);
@@ -94,7 +95,8 @@ println!("Continuous daylight: {}", day.always_above());
 
 Lists may be empty or contain multiple events. Use a twilight `Horizon` or
 `Horizon::Custom(angle)` for other crossings, and `for_date_multiple` for several
-horizons. Pass a `chrono-tz` zone for daylight-saving rules.
+horizons. Calendar events are returned in the supplied time zone. Jiff handles
+the time zone database; this library does not bundle one.
 `SolarEvents::grena3()` selects Grena3.
 
 ### Next elevation crossing
@@ -103,21 +105,23 @@ Using the time and location from the position example, find the next rising
 crossing of an apparent solar-centre elevation:
 
 ```rust
+use jiff::SignedDuration;
 use solar_positioning::{ElevationTarget, RefractionCorrection};
 
-let end = time + chrono::Duration::days(1);
+let end = time + SignedDuration::from_hours(24);
 let target = ElevationTarget {
     angle: 10.0,
     height: 190.0,
     refraction: Some(RefractionCorrection::standard()),
 };
-let rise = positions.next_elevation_rise(&time, &end, location, deltat, target)?;
+let rise = positions.next_elevation_rise(time, end, location, deltat, target)?;
 ```
 
 Angles are apparent with refraction, geometric without it. The result is `None` if
 the interval contains no crossing; `next_elevation_set` finds the descending crossing.
+Use `.to_zoned_datetime(zone)` on a returned timestamp for local time.
 
-### Without chrono
+### Without Jiff
 
 Disable default features and enable `std`, or `libm` for `no_std`:
 
@@ -134,7 +138,8 @@ Event searches also have `*_from_julian` methods.
 ## Limitations
 
 Supported years apply to both UT and TT. Calendar inputs use the proleptic
-Gregorian calendar; UTC approximates UT1. Grena3 requires zero observer height.
+Gregorian calendar; UTC approximates UT1. Jiff parses a leap second (`:60`) as
+`:59`; numeric UTC components reject `:60`. Grena3 requires zero observer height.
 Height changes parallax, not the visible horizon.
 
 Standard events use sea-level solar-centre positions, with sunrise and sunset including
@@ -152,7 +157,7 @@ Future estimates are (obviously) uncertain, particularly beyond 2100.
 cargo run --example basic_usage          # Solar position
 cargo run --example sunrise_sunset       # Sunrise/sunset/twilight
 cargo run --example grena3_comparison    # SPA vs Grena3
-cargo run --example sunrise_without_chrono --no-default-features --features std
+cargo run --example sunrise_from_julian --no-default-features --features std
 cargo run --example no_std_usage --no-default-features --features libm
 ```
 

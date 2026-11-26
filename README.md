@@ -149,6 +149,7 @@ Transit is meridian passage, not necessarily maximum elevation.
 
 Delta T estimates follow [Espenak and Meeus](http://eclipse.gsfc.nasa.gov/SEcat5/deltatpoly.html)
 with [updated fits](https://klaus.brunners.name/posts/delta-t-polynomials/).
+The built-in fit covers decimal years −500 through 3000. Outside that range, supply your own delta T.
 Future estimates are (obviously) uncertain, particularly beyond 2100.
 
 ## Examples

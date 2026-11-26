@@ -14,8 +14,8 @@
 use crate::error::check_coordinates;
 use crate::events::EventPosition;
 use crate::math::{
-    PI, asin, atan2, cos, degrees_to_radians, normalize_degrees_0_to_360, radians_to_degrees,
-    rem_euclid, sin, sin_cos, sqrt, tan,
+    PI, asin, atan2, cos, degrees_to_radians, radians_to_degrees, rem_euclid, sin, sin_cos, sqrt,
+    tan,
 };
 use crate::time::JulianDate;
 use crate::{Location, RefractionCorrection, Result, SolarPosition};
@@ -40,11 +40,8 @@ pub fn solar_position(
 ) -> Result<SolarPosition> {
     check_coordinates(latitude, longitude)?;
 
-    let Position {
-        elevation: e_p,
-        azimuth: gamma,
-        ..
-    } = position(parts, latitude, longitude);
+    let position = position(parts, latitude, longitude);
+    let e_p = position.elevation;
 
     // Apply refraction correction if provided and sun is visible
     let delta_re = refraction.map_or(0.0, |correction| {
@@ -57,7 +54,7 @@ pub fn solar_position(
 
     let z = PI / 2.0 - e_p - delta_re;
 
-    let azimuth = normalize_degrees_0_to_360(radians_to_degrees(gamma + PI));
+    let azimuth = radians_to_degrees(position.azimuth(parts) + PI);
     let zenith = radians_to_degrees(z);
 
     SolarPosition::new(azimuth, zenith)
@@ -81,11 +78,23 @@ pub fn refraction_slope_bound(correction: RefractionCorrection) -> f64 {
     refraction_correction(REFRACTION_CUTOFF, correction) / (sine * cosine)
 }
 
-// Unrefracted angles in radians; azimuth is measured westwards from south.
+// Unrefracted angles in radians, with shared terms for the azimuth calculation.
 struct Position {
     elevation: f64,
-    azimuth: f64,
     hour_angle: f64,
+    sin_phi: f64,
+    cos_phi: f64,
+    cos_h: f64,
+}
+
+impl Position {
+    // Azimuth measured westwards from south.
+    fn azimuth(&self, parts: &TimeDependent) -> f64 {
+        atan2(
+            sin(self.hour_angle),
+            self.cos_h * self.sin_phi - parts.sin_delta * self.cos_phi / parts.cos_delta,
+        )
+    }
 }
 
 #[inline]
@@ -134,22 +143,22 @@ fn position(parts: &TimeDependent, latitude: f64, longitude: f64) -> Position {
     ) - PI;
 
     // Calculate topocentric coordinates
-    let s_phi = sin(degrees_to_radians(latitude));
-    let c_phi = sqrt(1.0 - s_phi * s_phi);
+    let sin_phi = sin(degrees_to_radians(latitude));
+    let cos_phi = sqrt(1.0 - sin_phi * sin_phi);
     let s_delta = parts.sin_delta;
     let c_delta = parts.cos_delta;
-    let s_h = sin(h);
-    let c_h = cos(h);
+    let cos_h = cos(h);
 
     // Roundoff can put the sine just outside [-1, 1] at the zenith or nadir.
-    let s_epsilon0 = (s_phi * s_delta + c_phi * c_delta * c_h).clamp(-1.0, 1.0);
+    let s_epsilon0 = (sin_phi * s_delta + cos_phi * c_delta * cos_h).clamp(-1.0, 1.0);
     let e_p = asin(s_epsilon0) - 4.26e-5 * sqrt(1.0 - s_epsilon0 * s_epsilon0);
-    let gamma = atan2(s_h, c_h * s_phi - s_delta * c_phi / c_delta);
 
     Position {
         elevation: e_p,
-        azimuth: gamma,
         hour_angle: h,
+        sin_phi,
+        cos_phi,
+        cos_h,
     }
 }
 

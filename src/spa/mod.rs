@@ -13,7 +13,7 @@
 use crate::error::check_coordinates;
 use crate::math::{
     acos, asin, atan, atan2, cos, degrees_to_radians, mul_add, normalize_degrees_0_to_360,
-    polynomial, powi, radians_to_degrees, sin, sin_cos, tan,
+    polynomial, radians_to_degrees, sin, sin_cos, tan,
 };
 use crate::time::JulianDate;
 use crate::{Location, RefractionCorrection, Result, SolarPosition, events::EventPosition};
@@ -127,9 +127,10 @@ fn calculate_apparent_sidereal_time_at_greenwich(
     delta_psi: f64,
     epsilon_degrees: f64,
 ) -> f64 {
+    let jc = jd.julian_century();
     let nu0_degrees = normalize_degrees_0_to_360(mul_add(
-        powi(jd.julian_century(), 2),
-        0.000387933 - jd.julian_century() / 38710000.0,
+        jc * jc,
+        0.000387933 - jc / 38710000.0,
         mul_add(
             360.98564736629f64,
             jd.julian_date() - 2451545.0,

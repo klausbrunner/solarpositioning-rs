@@ -222,13 +222,17 @@ impl SolarPosition {
         90.0 - self.zenith_angle
     }
 
-    /// Checks if the sun is above the horizon (elevation angle > 0°).
+    /// Returns whether the Sun's centre is above 0° elevation.
+    ///
+    /// This uses the position's elevation, not the [`Horizon::SunriseSunset`] threshold.
     #[must_use]
     pub fn is_sun_up(&self) -> bool {
         self.elevation_angle() > 0.0
     }
 
-    /// Checks if the sun is at or below the horizon (elevation angle ≤ 0°).
+    /// Returns whether the Sun's centre is at or below 0° elevation.
+    ///
+    /// This is the complement of [`Self::is_sun_up`].
     #[must_use]
     pub fn is_sun_down(&self) -> bool {
         self.elevation_angle() <= 0.0

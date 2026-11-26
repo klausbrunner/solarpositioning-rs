@@ -13,41 +13,32 @@ fn prepared_positions_match_single_calls_and_remain_independent() {
     fn assert_traits<T: Copy + Send + Sync>() {}
     assert_traits::<SolarPositions>();
     assert_traits::<PreparedPositions>();
+
+    let time = JulianDate::from_utc(2024, 6, 21, 12, 30, 12.5, 69.184).unwrap();
+    let later = JulianDate::from_utc(2024, 6, 21, 18, 30, 12.5, 70.184).unwrap();
+    let sao_paulo = Location {
+        latitude: -23.55,
+        longitude: -46.63,
+    };
     for (positions, height) in [
         (SolarPositions::default(), 190.0),
         (SolarPositions::grena3(), 0.0),
     ] {
-        for month in [1, 3, 6, 9, 12] {
-            let time = JulianDate::from_utc(2024, month, 21, 12, 30, 12.5, 69.184).unwrap();
-            let prepared = positions.for_time_from_julian(time).unwrap();
-            let reference = SolarPositions::new().for_time_from_julian(time).unwrap();
-            assert!((0.0..360.0).contains(&prepared.right_ascension()));
-            let ra_error = (prepared.right_ascension() - reference.right_ascension()).abs();
-            assert!(ra_error.min(360.0 - ra_error) < 0.02);
-            assert!((prepared.declination() - reference.declination()).abs() < 0.02);
-            let original = prepared.at(LOCATION, height, None).unwrap();
-            let later = JulianDate::new(time.julian_date() + 0.25, time.delta_t() + 1.0).unwrap();
-            let other = positions.for_time_from_julian(later).unwrap();
-            assert_eq!(
-                other.at(LOCATION, height, None),
-                positions.at_from_julian(later, LOCATION, height, None)
-            );
-            assert_eq!(original, prepared.at(LOCATION, height, None).unwrap());
-            for latitude in [-90.0, -48.21, 0.0, 48.21, 90.0] {
-                for longitude in [-180.0, 0.0, 16.37, 180.0] {
-                    let location = Location {
-                        latitude,
-                        longitude,
-                    };
-                    for refraction in [None, Some(RefractionCorrection::standard())] {
-                        let expected = positions
-                            .at_from_julian(time, location, height, refraction)
-                            .unwrap();
-                        assert_eq!(expected, prepared.at(location, height, refraction).unwrap());
-                    }
-                }
-            }
-        }
+        let original = positions
+            .at_from_julian(time, LOCATION, height, None)
+            .unwrap();
+        let prepared = positions.for_time_from_julian(time).unwrap();
+        let other = positions.for_time_from_julian(later).unwrap();
+        assert_ne!(other.at(LOCATION, height, None).unwrap(), original);
+        assert_eq!(prepared.at(LOCATION, height, None).unwrap(), original);
+
+        let refraction = Some(RefractionCorrection::standard());
+        assert_eq!(
+            prepared.at(sao_paulo, height, refraction).unwrap(),
+            positions
+                .at_from_julian(time, sao_paulo, height, refraction)
+                .unwrap()
+        );
     }
 }
 

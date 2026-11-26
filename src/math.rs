@@ -176,16 +176,6 @@ pub fn mul_add(x: f64, a: f64, b: f64) -> f64 {
     return libm::fma(x, a, b);
 }
 
-/// Computes x^n for integer n.
-#[inline]
-pub fn powi(x: f64, n: i32) -> f64 {
-    #[cfg(feature = "std")]
-    return x.powi(n);
-
-    #[cfg(not(feature = "std"))]
-    return libm::pow(x, f64::from(n));
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

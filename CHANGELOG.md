@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [0.8.0] - 2026-11-26
+
 ### Changed
 
 - **BREAKING**: Replace Chrono with Jiff for timestamps and local calendar dates.
